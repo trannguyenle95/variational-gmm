@@ -14,8 +14,7 @@ class VariationalBayesGMM:
         self.alpha_0 = kwargs.get('alpha_0', .1)
         self.beta_0 = kwargs.get('beta_0', 1e-20)
         self.nu_0 = kwargs.get('nu_0', self.n_features + 1.)
-        self.m_0 = kwargs.get('m_0',
-                              np.zeros((self.n_components, self.n_features)))
+        self.m_0 = kwargs.get('m_0', np.zeros(self.n_features))
         self.W_0 = kwargs.get('W_0', np.eye(self.n_features))
         self.inv_W_0 = np.linalg.inv(self.W_0)
         self.responsibilities = None
@@ -69,7 +68,7 @@ class VariationalBayesGMM:
         q3 = 0.0
         for k in range(self.n_components):
             q3 += self.nu_k[k] * np.trace(np.dot(self.inv_W_0, self.W_k[k]))
-            diff = self.m_k[k] - self.m_0[k]
+            diff = self.m_k[k] - self.m_0
             q2_1 = np.dot(diff, self.W_k[k]).dot(diff.T)
             q2 += (self.n_features * np.log(self.beta_0 / (2 * np.pi))
                    + self.expec_log_det_lambda[k]
@@ -98,26 +97,27 @@ class VariationalBayesGMM:
     def _calculate_S_k(self):
         """
         Return (K, D, D) tensor.
-        Eq. 19.53 from Bishop
+        Eq. 10.53 from Bishop
         """
+        # (N, K, D) tensor
         normalizer = self.X[:, np.newaxis] - self.x_k_hat
-        # (K, N, D) tensor
-        normalizer = np.transpose(normalizer, axes=[1, 0, 2])
+        # (D, N, K) tensor
+        normalizer = np.transpose(normalizer, axes=[2, 0, 1])
 
         # (K, D, N) tensor
-        trans_normalizer = np.transpose(normalizer, axes=[0, 2, 1])
+        trans_normalizer = np.transpose(normalizer, axes=[2, 0, 1])
 
-        # Multiply responsibilities for each (K, N) D vector. We still have
-        # a (K, N, D) tensor.
+        # Multiply responsibilities for each (K, N) D vector.
         prod = self.responsibilities[np.newaxis, :] * normalizer
+        prod = np.transpose(prod, axes=[2, 1, 0]) # (K, N, D) tensor
 
         # K dot products of dimensions (D, N) x (N, D) to get K (D, D) matrices
         # (K, D, D) tensor
-        k_d_d_matrixes = np.einsum('ijk, lkm -> ijm',
+        k_d_d_matrixes = np.einsum('lij, ljk -> lik',
                                    trans_normalizer,
                                    prod)
 
-        return 1. / self.N_k * k_d_d_matrixes
+        return 1. / self.N_k[:, np.newaxis, np.newaxis] * k_d_d_matrixes
 
     def _calculate_W_k(self):
         """
@@ -125,15 +125,17 @@ class VariationalBayesGMM:
         Eq. 10.62 from Bishop
         """
         temp1 = self.x_k_hat - self.m_0
+        print(temp1.shape)
         # (K, D, D) tensor
         temp = np.einsum('ij, ik -> ijk', temp1, temp1)
         assert temp.shape == (self.n_components, self.n_features,
                               self.n_features)
 
+        temp2 = self.beta_0 * self.N_k / (self.beta_0 + self.N_k)
         # We have the inverted W_k
         inv_W_k = (self.inv_W_0[np.newaxis, :]
-                   + self.N_k * self.S_k
-                   + self.beta_0 * self.N_k / (self.beta_0 + self.N_k) * temp)
+                + self.N_k[:, np.newaxis, np.newaxis] * self.S_k
+                + temp2[:, np.newaxis, np.newaxis] * temp)
         # Invert inv_W_k
         return np.linalg.inv(inv_W_k)
 
@@ -149,7 +151,7 @@ class VariationalBayesGMM:
 
         # Take the dot product from each (N, D) vector with the (D, D) matrix.
         # The result is a (K, N, D) tensor
-        first_dot = np.einsum('ijk, lkm -> ijm', diff, self.W_k)
+        first_dot = np.einsum('lij, ljk -> lik', diff, self.W_k)
 
         mul = np.sum(first_dot * diff, axis=2)  # (K, N) matrix.
         return (self.n_features / self.beta_k[:, np.newaxis]
@@ -195,7 +197,7 @@ class VariationalBayesGMM:
         assert self.alpha_k.shape == (self.n_components,)
 
         # x_k_hat is a (K, D) matrix
-        self.x_k_hat = 1. / self.N_k * self.responsibilities.T.dot(self.X)
+        self.x_k_hat = 1. / self.N_k[:, np.newaxis] * self.responsibilities.T.dot(self.X)
         assert self.x_k_hat.shape == (self.n_components, self.n_features)
 
         self.S_k = self._calculate_S_k()  # (K, D, D) tensor
@@ -207,8 +209,8 @@ class VariationalBayesGMM:
         assert self.beta_k.shape == (self.n_components,)
 
         # m_k is a (K, D) matrix
-        self.m_k = 1. / self.beta_k * (self.beta_0 * self.m_0
-                                       + self.N_k * self.x_k_hat)
+        self.m_k = 1. / self.beta_k[:, np.newaxis] * (self.beta_0 * self.m_0
+                + self.N_k[:, np.newaxis] * self.x_k_hat)
         assert self.m_k.shape == (self.n_components, self.n_features)
 
         # W_k is a (K, D, D) tensor
