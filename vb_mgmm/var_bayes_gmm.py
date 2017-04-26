@@ -18,7 +18,6 @@ class VariationalBayesGMM:
         self.W_0 = kwargs.get('W_0', np.eye(self.n_features))
         self.inv_W_0 = np.linalg.inv(self.W_0)
         self.responsibilities = None
-        self.elbo_per_iter = []
 
     def fit(self, X, max_iter=100, verbose=True):
         assert self.n_features == X.shape[1]
@@ -28,6 +27,7 @@ class VariationalBayesGMM:
         self.X = X
         self.responsibilities = np.random.dirichlet(np.ones(self.n_components),
                                                     size=self.N)
+        self.elbo_per_iter = []
         for i in range(self.max_iter):
             self._m_step()
             self._e_step()
@@ -35,7 +35,7 @@ class VariationalBayesGMM:
             self.elbo_per_iter.append(elbo)
 
             if len(self.elbo_per_iter) > 1:
-                if elbo < self.elbo_per_iter[-2]:
+                if elbo < self.elbo_per_iter[-2] and verbose:
                     print('ELBO IS DECREASING!!!!')
                 # The elbo should not decrease
                 #assert elbo >= self.elbo_per_iter[-2]
@@ -43,27 +43,29 @@ class VariationalBayesGMM:
             if verbose:
                 print('Iteration: {}'.format(i))
                 print('ELBO: {}'.format(elbo))
-                print('Variational mu:', self.m_k)
+
+        if verbose:
+            print('Variational mu:\n', self.m_k)
 
     def _calculate_elbo(self):
         E_ln_p_X = 0.0
         for k in range(self.n_components):
-            q1 = self.nu_k[k] * np.trace(np.dot(self.S_k[k], self.W_k[k]))
-            diff = self.x_k_hat[k] - self.m_k[k]
+            q1 = self.nu_k[k] * np.trace(np.dot(self._S_k[k], self.W_k[k]))
+            diff = self._x_k_hat[k] - self.m_k[k]
             q2 = self.nu_k[k] * np.dot(diff, self.W_k[k]).dot(diff.T)
-            E_ln_p_X += self.N_k[k] * (self.expec_log_det_lambda[k]
+            E_ln_p_X += self._N_k[k] * (self._expec_log_det_lambda[k]
                                        - self.n_features / self.beta_k[k]
                                        - q1
                                        - q2
                                        - self.n_features * np.log(2 * np.pi))
         E_ln_p_X = .5 * E_ln_p_X
 
-        E_ln_p_Z = np.sum(self.responsibilities * self.expec_log_pi_k)
+        E_ln_p_Z = np.sum(self.responsibilities * self._expec_log_pi_k)
 
         E_ln_p_pi = (log_C(self.alpha_0 * np.ones(self.n_components))
-                     + (self.alpha_0 - 1) * np.sum(self.expec_log_pi_k))
+                     + (self.alpha_0 - 1) * np.sum(self._expec_log_pi_k))
 
-        q1 = np.sum(self.expec_log_det_lambda)
+        q1 = np.sum(self._expec_log_det_lambda)
         q2 = 0.0
         q3 = 0.0
         for k in range(self.n_components):
@@ -71,7 +73,7 @@ class VariationalBayesGMM:
             diff = self.m_k[k] - self.m_0
             q2_1 = np.dot(diff, self.W_k[k]).dot(diff.T)
             q2 += (self.n_features * np.log(self.beta_0 / (2 * np.pi))
-                   + self.expec_log_det_lambda[k]
+                   + self._expec_log_det_lambda[k]
                    - self.n_features * self.beta_0 / self.beta_k[k]
                    - self.beta_0 * self.nu_k[k] * q2_1)
         E_ln_p_mu_lamb = (.5 * q2
@@ -82,11 +84,11 @@ class VariationalBayesGMM:
         E_ln_q_Z = np.sum(self.responsibilities
                           * np.log(self.responsibilities))
 
-        E_ln_q_pi = (np.sum((self.alpha_k - 1) * self.expec_log_pi_k)
+        E_ln_q_pi = (np.sum((self.alpha_k - 1) * self._expec_log_pi_k)
                      + log_C(self.alpha_k))
         E_ln_q_mu_lamb = 0.0
         for k in range(self.n_components):
-            E_ln_q_mu_lamb += (.5 * self.expec_log_det_lambda[k]
+            E_ln_q_mu_lamb += (.5 * self._expec_log_det_lambda[k]
                                + .5 * self.n_features * np.log(self.beta_k[k] / (2 * np.pi))
                                - .5 * self.n_features
                                - wishart_entropy(self.W_k[k], self.nu_k[k]))
@@ -100,7 +102,7 @@ class VariationalBayesGMM:
         Eq. 10.53 from Bishop
         """
         # (N, K, D) tensor
-        normalizer = self.X[:, np.newaxis] - self.x_k_hat
+        normalizer = self.X[:, np.newaxis] - self._x_k_hat
         # (D, N, K) tensor
         normalizer = np.transpose(normalizer, axes=[2, 0, 1])
 
@@ -117,24 +119,23 @@ class VariationalBayesGMM:
                                    trans_normalizer,
                                    prod)
 
-        return 1. / self.N_k[:, np.newaxis, np.newaxis] * k_d_d_matrixes
+        return 1. / self._N_k[:, np.newaxis, np.newaxis] * k_d_d_matrixes
 
     def _calculate_W_k(self):
         """
         Return (K, D, D) tensor.
         Eq. 10.62 from Bishop
         """
-        temp1 = self.x_k_hat - self.m_0
-        print(temp1.shape)
+        temp1 = self._x_k_hat - self.m_0
         # (K, D, D) tensor
         temp = np.einsum('ij, ik -> ijk', temp1, temp1)
         assert temp.shape == (self.n_components, self.n_features,
                               self.n_features)
 
-        temp2 = self.beta_0 * self.N_k / (self.beta_0 + self.N_k)
+        temp2 = self.beta_0 * self._N_k / (self.beta_0 + self.N_k)
         # We have the inverted W_k
         inv_W_k = (self.inv_W_0[np.newaxis, :]
-                + self.N_k[:, np.newaxis, np.newaxis] * self.S_k
+                + self._N_k[:, np.newaxis, np.newaxis] * self._S_k
                 + temp2[:, np.newaxis, np.newaxis] * temp)
         # Invert inv_W_k
         return np.linalg.inv(inv_W_k)
@@ -172,10 +173,10 @@ class VariationalBayesGMM:
         return E_log_det_lambda
 
     def _reestimate_responsibilities(self):
-        ln_rho = (self.expec_log_pi_k[:, np.newaxis]
-                  + .5 * self.expec_log_det_lambda[:, np.newaxis]
+        ln_rho = (self._expec_log_pi_k[:, np.newaxis]
+                  + .5 * self._expec_log_det_lambda[:, np.newaxis]
                   - .5 * self.n_features * np.log(2 * np.pi)
-                  - .5 * self.expec_mu_lambda)
+                  - .5 * self._expec_mu_lambda)
         log_responsibilities = ln_rho - logsumexp(ln_rho, axis=0)
         self.responsibilities = np.exp(log_responsibilities)
 
@@ -184,33 +185,34 @@ class VariationalBayesGMM:
         assert self.responsibilities.shape == (self.N, self.n_components)
 
     def _m_step(self):
-        # N_k is a K vector
-        self.N_k = self.responsibilities.sum(axis=0)
-        assert self.N_k.shape == (self.n_components,)
+        # _N_k is a K vector
+        self._N_k = self.responsibilities.sum(axis=0)
+        assert self._N_k.shape == (self.n_components,)
 
         # nu_k is a K vector
-        self.nu_k = self.nu_0 + self.N_k
+        self.nu_k = self.nu_0 + self._N_k
         assert self.nu_k.shape == (self.n_components,)
 
         # alpha_k is a K vector
-        self.alpha_k = self.alpha_0 + self.N_k
+        self.alpha_k = self.alpha_0 + self._N_k
         assert self.alpha_k.shape == (self.n_components,)
 
-        # x_k_hat is a (K, D) matrix
-        self.x_k_hat = 1. / self.N_k[:, np.newaxis] * self.responsibilities.T.dot(self.X)
-        assert self.x_k_hat.shape == (self.n_components, self.n_features)
+        # _x_k_hat is a (K, D) matrix
+        self._x_k_hat = (1. / self._N_k[:, np.newaxis]
+                * self.responsibilities.T.dot(self.X))
+        assert self._x_k_hat.shape == (self.n_components, self.n_features)
 
-        self.S_k = self._calculate_S_k()  # (K, D, D) tensor
-        assert self.S_k.shape == (self.n_components, self.n_features,
+        self._S_k = self._calculate_S_k()  # (K, D, D) tensor
+        assert self._S_k.shape == (self.n_components, self.n_features,
                                   self.n_features)
 
         # beta_k is a K vector
-        self.beta_k = self.beta_0 + self.N_k
+        self.beta_k = self.beta_0 + self._N_k
         assert self.beta_k.shape == (self.n_components,)
 
         # m_k is a (K, D) matrix
         self.m_k = 1. / self.beta_k[:, np.newaxis] * (self.beta_0 * self.m_0
-                + self.N_k[:, np.newaxis] * self.x_k_hat)
+                + self._N_k[:, np.newaxis] * self._x_k_hat)
         assert self.m_k.shape == (self.n_components, self.n_features)
 
         # W_k is a (K, D, D) tensor
@@ -220,16 +222,16 @@ class VariationalBayesGMM:
 
     def _e_step(self):
         # (K, N) matrix
-        self.expec_mu_lambda = self._calculate_E_mu_lambda()
-        assert self.expec_mu_lambda.shape == (self.n_components, self.N)
+        self._expec_mu_lambda = self._calculate_E_mu_lambda()
+        assert self._expec_mu_lambda.shape == (self.n_components, self.N)
 
         # K vector
-        self.expec_log_det_lambda = self._calculate_E_log_det_lambda()
-        assert self.expec_log_det_lambda.shape == (self.n_components,)
+        self._expec_log_det_lambda = self._calculate_E_log_det_lambda()
+        assert self._expec_log_det_lambda.shape == (self.n_components,)
 
         # K vector
-        self.expec_log_pi_k = (digamma(self.alpha_k)
-                               - digamma(np.sum(self.alpha_k)))
-        assert self.expec_log_pi_k.shape == (self.n_components,)
+        self._expec_log_pi_k = (digamma(self.alpha_k)
+                                - digamma(np.sum(self.alpha_k)))
+        assert self._expec_log_pi_k.shape == (self.n_components,)
 
         self._reestimate_responsibilities()
