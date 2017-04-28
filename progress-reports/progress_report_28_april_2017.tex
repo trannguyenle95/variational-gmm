@@ -1,0 +1,92 @@
+\documentclass{article}
+
+\usepackage{graphicx}
+\usepackage{amsmath}
+
+\begin{document}
+
+\title{Progress report}
+\author{Lukas Zorich}
+
+\maketitle
+
+\section{Background}
+
+Let $X = \{ x_1, \dotsc, x_N \}$ a collection of $N$ points. Now, lets suppose that the features of $x_j$ are updated, and lets call $x_j^{\star}$ the updated point. Lastly, lets define $X_{-j} = \{ x_1, \dotsc, x_{j-1}, x_{j+1}, \dotsc, x_N \}$.
+
+The posterior before $x_j$ moves, and using $P(\Theta)$ as the prior is
+
+$$P(\Theta \mid X) \propto P(X \mid \Theta)P(\Theta)$$,
+
+where $P(X \mid \Theta) = \prod_i^N P(x_i \mid \Theta)$.
+
+Now, after $x_j$ moves to $x_j^{\star}$, the posterior is
+
+\begin{align*}
+P(\Theta \mid X_{-j}, x_j^{\star}) &\propto P(X_{-j}, x_j^{\star} \mid \Theta)P(\Theta) \\
+&\propto P(X_{-j} \mid \Theta)P(x_j^{\star} \mid \Theta)P(\Theta) \\
+&\propto \frac{P(X \mid \Theta)}{P(x_j \mid \Theta)}P(x_j^{\star} \mid \Theta)P(\Theta) \\
+&\propto \frac{P(x_j^{\star} \mid \Theta)}{P(x_j \mid \Theta)}P(X \mid \Theta)P(\Theta) \\
+\end{align*}
+
+which can be written as,
+
+\begin{equation}
+\label{eq-1}
+P(\Theta \mid X_{-j}, x_j^{\star}) \propto \frac{P(x_j^{\star} \mid \Theta)}{P(x_j \mid \Theta)}P(\Theta \mid X)
+\end{equation}
+
+Now, if we instead of considering one data point $x_j$, we consider a batch
+of $S$ data points $X_J = \{ x_j, x_{j+1}, \dotsc, x_{j + S - 1}, x_{j + S} \}$
+that moved from $x_{j + k}$ to $x_{j + k}^{\star}$, for $k = 0, \dotsc, S$. And
+lets define $X_{-J} = \{ x_1, \dotsc, x_{j-1}, x_{j + S + 1}, \dotsc, x_N \}$.
+Then, Eq. \ref{eq-1} for the batch of $S$ data point and because the prior
+$P(\Theta)$ gets canceled, can be written as,
+
+\begin{equation}
+\label{eq-2}
+P(\Theta \mid X_{-J}, X_{-J}^{\star}) \propto 
+\frac{P(\Theta \mid X_{-J}^{\star})}{P(\Theta \mid X_{-J})}P(\Theta \mid X) \\
+\end{equation}.
+
+Inspired by the work done in \cite{streaming-variational-bayes}, we assume 
+that we approximate the posterior using \textbf{variational inference}. Also,
+we assume that $P(\Theta)$ is an exponential family distribution for $\Theta$
+with sufficient statistic $T(\Theta)$ and natural parameter $\xi_0$. We suppose
+further that if $q(\Theta)$ is the approximate posterior obtained using
+variational inference, then $q(\Theta)$ is also in the same exponential family
+with a parameter $\xi$ such that
+
+\begin{equation}
+\label{exponential-family}
+q(\Theta) \propto \text{exp}(\xi \cdot T(\Theta)).
+\end{equation}
+
+Similar to \cite{streaming-variational-bayes}, when we make this assumptions
+the update in Eq. \ref{eq-2} becomes
+
+\begin{equation}
+P(\Theta \mid X_{-J}, X_{-J}^{\star}) \approx \text{exp}([\xi - \xi_{-J} + \xi_{-J}^{\star}] \cdot T(\Theta))
+\end{equation},
+
+where $\xi$ is the natural parameter of $q(\Theta) \approx P(\Theta \mid X)$, and
+$\xi_{-J}$ and $\xi_{-J}^{\star}$ corresponds to the natural parameter of 
+$q_{-J}(\Theta) \approx p(\Theta \mid X_{-J})$ and 
+$q_{-J}^{\star}(\Theta) \approx p(\Theta \mid X_{-J}^{\star})$ respectively.
+
+\textbf{Using this approach, we can update the posterior when data "moves" without
+the need to go through the whole dataset, instead we just need to go through
+the data points that moved to obtain $\xi_{-J}$ and $\xi_{-J}^{\star}$.}
+
+\section{My model}
+Write your subsection text here.
+
+\section{Experiments}
+Write your conclusion here.
+Hola \cite{streaming-variational-bayes} blabla
+
+\section{Next steps}
+
+\bibliographystyle{acm}
+\bibliography{bibliography} 
+\end{document}
