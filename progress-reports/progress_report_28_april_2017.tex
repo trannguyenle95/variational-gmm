@@ -87,7 +87,7 @@ $q_{J}^{\star}(\Theta) \approx p(\Theta \mid X_{J}^{\star})$ respectively.
 without the need to go through the whole dataset, instead we just need to go 
 through the data points that moved to obtain $\xi_{J}$ and $\xi_{J}^{\star}$.}
 
-\section{Application to my model}
+\section{Application to a simplied version of my model}
 For trying the proposed approach, I'm starting only with a single GMM (I prefer
 to start small).
 
@@ -160,11 +160,35 @@ hence, the updates are:
 \nu' &= \nu - \nu_J + \nu_J^{\star} \\
 \end{align}
 
-\section{Experiments}
-Write your conclusion here.
-Hola \cite{streaming-variational-bayes} blabla
+\section{Current progress}
+
+During the three weeks since I sent my goals for this months I distributed
+my time like this:
+
+\begin{enumerate}
+\item Week 1: Try to implement the online update in PyMC. I tried to implement
+this, but I kept getting errors. I asked in the PyMC forum for help, but nobody
+could help me. I think that PyMC is not flexible to do this type of work.
+\item Week 2: Decided to move to variational inference, because there are
+several papers that use variational inference for streaming bayesian models.
+I started implementing the variational inference GMM.
+\item Week 3: Finished implementing the variational inference GMM. Started
+working in the online update, but I'm having some bugs, so this part is 
+not finished yet.
+\end{enumerate}
+
+The current progress is the following:
+
+\begin{itemize}
+\item Implementing variational bayes GMM: 100\%.
+\item Implementing online update of the posterior: 70\%. I have the code written,
+but I'm having a numerical underflow bug when doing the updates.
+\end{itemize}
 
 \section{Next steps}
+
+Finish implementing this (hopefully this weekend), and depending on the results
+decide the next steps.
 
 \bibliographystyle{acm}
 \bibliography{bibliography} 
