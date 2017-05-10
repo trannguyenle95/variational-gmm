@@ -52,7 +52,7 @@ class VariationalGMM:
             self.checkpoints.append(self.get_checkpoint())
 
             if len(self.elbo_per_iter) > 1 and elbo < self.elbo_per_iter[-2]:
-                    logger.error('ELBO IS DECREASING!')
+                logger.error('ELBO IS DECREASING!')
             logger.info('Iteration: ', i)
             logger.info('ELBO: ', elbo)
         elapsed_time_secs = time.time() - start_time_secs
@@ -108,20 +108,21 @@ class VariationalGMM:
 
         # _x_k_hat is a (K, D) matrix
         self._x_k_hat = (1. / self._N_k[:, np.newaxis]
-                * self.responsibilities.T.dot(self.X))
+                         * self.responsibilities.T.dot(self.X))
         assert self._x_k_hat.shape == (self.n_components, self.n_features)
 
         self._S_k = self._calculate_S_k()  # (K, D, D) tensor
         assert self._S_k.shape == (self.n_components, self.n_features,
-                                  self.n_features)
+                                   self.n_features)
 
         # beta_k is a K vector
         self.beta_k = self.beta_0 + self._N_k
         assert self.beta_k.shape == (self.n_components,)
 
         # m_k is a (K, D) matrix
-        self.m_k = 1. / self.beta_k[:, np.newaxis] * (self.beta_0 * self.m_0
-                + self._N_k[:, np.newaxis] * self._x_k_hat)
+        self.m_k = (1. / self.beta_k[:, np.newaxis]
+                    * (self.beta_0 * self.m_0
+                       + self._N_k[:, np.newaxis] * self._x_k_hat))
         assert self.m_k.shape == (self.n_components, self.n_features)
 
         # W_k is a (K, D, D) tensor
@@ -164,10 +165,10 @@ class VariationalGMM:
             diff = self._x_k_hat[k] - self.m_k[k]
             q2 = self.nu_k[k] * np.dot(diff, self.W_k[k]).dot(diff.T)
             E_ln_p_X += self._N_k[k] * (self._expec_log_det_lambda[k]
-                                       - self.n_features / self.beta_k[k]
-                                       - q1
-                                       - q2
-                                       - self.n_features * np.log(2 * np.pi))
+                                        - self.n_features / self.beta_k[k]
+                                        - q1
+                                        - q2
+                                        - self.n_features * np.log(2 * np.pi))
         E_ln_p_X = .5 * E_ln_p_X
 
         E_ln_p_Z = np.sum(self.responsibilities * self._expec_log_pi_k)
@@ -199,7 +200,8 @@ class VariationalGMM:
         E_ln_q_mu_lamb = 0.0
         for k in range(self.n_components):
             E_ln_q_mu_lamb += (.5 * self._expec_log_det_lambda[k]
-                               + .5 * self.n_features * np.log(self.beta_k[k] / (2 * np.pi))
+                               + (.5 * self.n_features
+                                  * np.log(self.beta_k[k] / (2 * np.pi)))
                                - .5 * self.n_features
                                - wishart_entropy(self.W_k[k], self.nu_k[k]))
 
@@ -221,7 +223,7 @@ class VariationalGMM:
 
         # Multiply responsibilities for each (K, N) D vector.
         prod = self.responsibilities[np.newaxis, :] * normalizer
-        prod = np.transpose(prod, axes=[2, 1, 0]) # (K, N, D) tensor
+        prod = np.transpose(prod, axes=[2, 1, 0])  # (K, N, D) tensor
 
         # K dot products of dimensions (D, N) x (N, D) to get K (D, D) matrices
         # (K, D, D) tensor
@@ -245,8 +247,8 @@ class VariationalGMM:
         temp2 = self.beta_0 * self._N_k / (self.beta_0 + self._N_k)
         # We have the inverted W_k
         inv_W_k = (self.inv_W_0[np.newaxis, :]
-                + self._N_k[:, np.newaxis, np.newaxis] * self._S_k
-                + temp2[:, np.newaxis, np.newaxis] * temp)
+                   + self._N_k[:, np.newaxis, np.newaxis] * self._S_k
+                   + temp2[:, np.newaxis, np.newaxis] * temp)
         # Invert inv_W_k
         return np.linalg.inv(inv_W_k)
 
