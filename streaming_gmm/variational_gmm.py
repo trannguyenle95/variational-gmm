@@ -2,13 +2,20 @@ import numpy as np
 from scipy.special.basic import digamma
 from scipy.misc import logsumexp
 from .utils import log_C, log_B, wishart_entropy
+import logging
+import time
+import datetime
 
 
-class VariationalBayesGMM:
+logger = logging.getLogger(__name__)
+
+
+class VariationalGMM:
 
     def __init__(self, n_components, n_features, **kwargs):
         self.n_components = n_components
         self.n_features = n_features
+        self.N = 0
 
         # Hyperparameters initialization
         self.alpha_0 = kwargs.get('alpha_0', .1)
@@ -19,7 +26,14 @@ class VariationalBayesGMM:
         self.inv_W_0 = np.linalg.inv(self.W_0)
         self.responsibilities = None
 
-    def fit(self, X, max_iter=100, verbose=True):
+        # model params
+        self.W_k = None
+        self.nu_k = None
+        self.alpha_k = None
+        self.beta_k = None
+        self.m_k = None
+
+    def fit(self, X, max_iter=100):
         assert self.n_features == X.shape[1]
 
         self.max_iter = max_iter
@@ -28,24 +42,120 @@ class VariationalBayesGMM:
         self.responsibilities = np.random.dirichlet(np.ones(self.n_components),
                                                     size=self.N)
         self.elbo_per_iter = []
+        self.checkpoints = []
+        start_time_secs = time.time()
         for i in range(self.max_iter):
             self._m_step()
             self._e_step()
             elbo = self._calculate_elbo()
             self.elbo_per_iter.append(elbo)
+            self.checkpoints.append(self.get_checkpoint())
 
-            if len(self.elbo_per_iter) > 1:
-                if elbo < self.elbo_per_iter[-2] and verbose:
-                    print('ELBO IS DECREASING!!!!')
-                # The elbo should not decrease
-                #assert elbo >= self.elbo_per_iter[-2]
+            if len(self.elbo_per_iter) > 1 and elbo < self.elbo_per_iter[-2]:
+                    logger.error('ELBO IS DECREASING!')
+            logger.info('Iteration: ', i)
+            logger.info('ELBO: ', elbo)
+        elapsed_time_secs = time.time() - start_time_secs
+        time_delta = datetime.timedelta(seconds=elapsed_time_secs)
+        logger.info('Finished inference. Elapsed time: ',
+                    '{}:{}:{}'.format(time_delta.hours,
+                                      time_delta.minutes,
+                                      time_delta.seconds))
+        logger.debug('Variational mu:\n', self.m_k)
 
-            if verbose:
-                print('Iteration: {}'.format(i))
-                print('ELBO: {}'.format(elbo))
+    def get_variational_parameters(self):
+        parameters = dict()
+        parameters['W_k'] = self.W_k
+        parameters['nu_k'] = self.nu_k
+        parameters['alpha_k'] = self.alpha_k
+        parameters['beta_k'] = self.beta_k
+        parameters['m_k'] = self.m_k
+        return parameters
 
-        if verbose:
-            print('Variational mu:\n', self.m_k)
+    def get_checkpoint(self):
+        checkpoint = self.get_variational_parameters()
+        checkpoint['elbo'] = self.elbo_per_iter[-1]
+        checkpoint['iteration'] = len(self.checkpoints)
+        return checkpoint
+
+    def get_results(self):
+        out = dict()
+        out['hyperparameters'] = {
+            'alpha_0': self.alpha_0,
+            'beta_0': self.beta_0,
+            'nu_0': self.nu_0,
+            'm_0': self.m_0,
+            'W_0': self.W_0
+        }
+        out['iterations'] = self.max_iter
+        out['objects'] = self.N
+        out['checkpoints'] = self.checkpoints
+        out['variational_parameters'] = self.get_variational_parameters()
+        return out
+
+    def _m_step(self):
+        # _N_k is a K vector
+        self._N_k = self.responsibilities.sum(axis=0)
+        assert self._N_k.shape == (self.n_components,)
+
+        # nu_k is a K vector
+        self.nu_k = self.nu_0 + self._N_k
+        assert self.nu_k.shape == (self.n_components,)
+
+        # alpha_k is a K vector
+        self.alpha_k = self.alpha_0 + self._N_k
+        assert self.alpha_k.shape == (self.n_components,)
+
+        # _x_k_hat is a (K, D) matrix
+        self._x_k_hat = (1. / self._N_k[:, np.newaxis]
+                * self.responsibilities.T.dot(self.X))
+        assert self._x_k_hat.shape == (self.n_components, self.n_features)
+
+        self._S_k = self._calculate_S_k()  # (K, D, D) tensor
+        assert self._S_k.shape == (self.n_components, self.n_features,
+                                  self.n_features)
+
+        # beta_k is a K vector
+        self.beta_k = self.beta_0 + self._N_k
+        assert self.beta_k.shape == (self.n_components,)
+
+        # m_k is a (K, D) matrix
+        self.m_k = 1. / self.beta_k[:, np.newaxis] * (self.beta_0 * self.m_0
+                + self._N_k[:, np.newaxis] * self._x_k_hat)
+        assert self.m_k.shape == (self.n_components, self.n_features)
+
+        # W_k is a (K, D, D) tensor
+        self.W_k = self._calculate_W_k()
+        assert self.W_k.shape == (self.n_components, self.n_features,
+                                  self.n_features)
+
+    def _e_step(self):
+        # (K, N) matrix
+        self._expec_mu_lambda = self._calculate_E_mu_lambda()
+        assert self._expec_mu_lambda.shape == (self.n_components, self.N)
+
+        # K vector
+        self._expec_log_det_lambda = self._calculate_E_log_det_lambda()
+        assert self._expec_log_det_lambda.shape == (self.n_components,)
+
+        # K vector
+        self._expec_log_pi_k = (digamma(self.alpha_k)
+                                - digamma(np.sum(self.alpha_k)))
+        assert self._expec_log_pi_k.shape == (self.n_components,)
+
+        self._reestimate_responsibilities()
+
+    def _reestimate_responsibilities(self):
+        ln_rho = (self._expec_log_pi_k[:, np.newaxis]
+                  + .5 * self._expec_log_det_lambda[:, np.newaxis]
+                  - .5 * self.n_features * np.log(2 * np.pi)
+                  - .5 * self._expec_mu_lambda)
+        log_responsibilities = ln_rho - logsumexp(ln_rho, axis=0)
+        self.responsibilities = np.exp(log_responsibilities)
+
+        # Ensure that responsibilities are a (N, K) matrix
+        self.responsibilities = np.transpose(self.responsibilities)
+        assert self.responsibilities.shape == (self.N, self.n_components)
 
     def _calculate_elbo(self):
         E_ln_p_X = 0.0
@@ -132,7 +242,7 @@ class VariationalBayesGMM:
         assert temp.shape == (self.n_components, self.n_features,
                               self.n_features)
 
-        temp2 = self.beta_0 * self._N_k / (self.beta_0 + self.N_k)
+        temp2 = self.beta_0 * self._N_k / (self.beta_0 + self._N_k)
         # We have the inverted W_k
         inv_W_k = (self.inv_W_0[np.newaxis, :]
                 + self._N_k[:, np.newaxis, np.newaxis] * self._S_k
@@ -171,67 +281,3 @@ class VariationalBayesGMM:
                             + self.n_features * np.log(2)
                             + np.log(np.linalg.det(self.W_k)))
         return E_log_det_lambda
-
-    def _reestimate_responsibilities(self):
-        ln_rho = (self._expec_log_pi_k[:, np.newaxis]
-                  + .5 * self._expec_log_det_lambda[:, np.newaxis]
-                  - .5 * self.n_features * np.log(2 * np.pi)
-                  - .5 * self._expec_mu_lambda)
-        log_responsibilities = ln_rho - logsumexp(ln_rho, axis=0)
-        self.responsibilities = np.exp(log_responsibilities)
-
-        # Ensure that responsibilities are a (N, K) matrix
-        self.responsibilities = np.transpose(self.responsibilities)
-        assert self.responsibilities.shape == (self.N, self.n_components)
-
-    def _m_step(self):
-        # _N_k is a K vector
-        self._N_k = self.responsibilities.sum(axis=0)
-        assert self._N_k.shape == (self.n_components,)
-
-        # nu_k is a K vector
-        self.nu_k = self.nu_0 + self._N_k
-        assert self.nu_k.shape == (self.n_components,)
-
-        # alpha_k is a K vector
-        self.alpha_k = self.alpha_0 + self._N_k
-        assert self.alpha_k.shape == (self.n_components,)
-
-        # _x_k_hat is a (K, D) matrix
-        self._x_k_hat = (1. / self._N_k[:, np.newaxis]
-                * self.responsibilities.T.dot(self.X))
-        assert self._x_k_hat.shape == (self.n_components, self.n_features)
-
-        self._S_k = self._calculate_S_k()  # (K, D, D) tensor
-        assert self._S_k.shape == (self.n_components, self.n_features,
-                                  self.n_features)
-
-        # beta_k is a K vector
-        self.beta_k = self.beta_0 + self._N_k
-        assert self.beta_k.shape == (self.n_components,)
-
-        # m_k is a (K, D) matrix
-        self.m_k = 1. / self.beta_k[:, np.newaxis] * (self.beta_0 * self.m_0
-                + self._N_k[:, np.newaxis] * self._x_k_hat)
-        assert self.m_k.shape == (self.n_components, self.n_features)
-
-        # W_k is a (K, D, D) tensor
-        self.W_k = self._calculate_W_k()
-        assert self.W_k.shape == (self.n_components, self.n_features,
-                                  self.n_features)
-
-    def _e_step(self):
-        # (K, N) matrix
-        self._expec_mu_lambda = self._calculate_E_mu_lambda()
-        assert self._expec_mu_lambda.shape == (self.n_components, self.N)
-
-        # K vector
-        self._expec_log_det_lambda = self._calculate_E_log_det_lambda()
-        assert self._expec_log_det_lambda.shape == (self.n_components,)
-
-        # K vector
-        self._expec_log_pi_k = (digamma(self.alpha_k)
-                                - digamma(np.sum(self.alpha_k)))
-        assert self._expec_log_pi_k.shape == (self.n_components,)
-
-        self._reestimate_responsibilities()
