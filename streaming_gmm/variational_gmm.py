@@ -12,10 +12,19 @@ logger = logging.getLogger(__name__)
 
 
 def log_C(alpha):
+    """Return the logarithm of the C(alpha) function (eq. B.23 of Bishop)."""
     return gammaln(np.sum(alpha)) - np.sum(gammaln(alpha))
 
 
 def log_B(W, nu):
+    """Return the logarithm of the B(W, nu) function (eq. B.79 of Bishop).
+
+       Parameters:
+       W -- D x D symmetric positive definite matrix.
+       nu -- number of degrees of freedom of the distribution, restricted to
+             nu > D - 1 to ensure that the Gamma function in the normalization
+             factor is well defined.
+    """
     D = W.shape[1]
     q1 = -.5 * nu * np.linalg.det(W)
     q2 = (.5 * nu * D
@@ -25,6 +34,14 @@ def log_B(W, nu):
 
 
 def wishart_entropy(W, nu):
+    """Return the Wishart entropy (eq. B.28 of Bishop).
+
+       Parameters:
+       W -- D x D symmetric positive definite matrix.
+       nu -- number of degrees of freedom of the distribution, restricted to
+             nu > D - 1 to ensure that the Gamma function in the normalization
+             factor is well defined.
+    """
     D = W.shape[1]
     q1 = (np.sum(digamma(.5 * (nu - np.arange(D))))
           + D * np.log(2)
