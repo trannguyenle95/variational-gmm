@@ -1,13 +1,36 @@
-import numpy as np
-from scipy.special.basic import digamma
-from scipy.misc import logsumexp
-from .utils import log_C, log_B, wishart_entropy
+import datetime
 import logging
 import time
-import datetime
+
+import numpy as np
+from scipy.misc import logsumexp
+from scipy.special import gammaln
+from scipy.special.basic import digamma
 
 
 logger = logging.getLogger(__name__)
+
+
+def log_C(alpha):
+    return gammaln(np.sum(alpha)) - np.sum(gammaln(alpha))
+
+
+def log_B(W, nu):
+    D = W.shape[1]
+    q1 = -.5 * nu * np.linalg.det(W)
+    q2 = (.5 * nu * D
+          + .25 * D * (D - 1) * np.pi
+          + np.sum(gammaln(.5 * (nu - np.arange(D)))))
+    return q1 - q2
+
+
+def wishart_entropy(W, nu):
+    D = W.shape[1]
+    q1 = (np.sum(digamma(.5 * (nu - np.arange(D))))
+          + D * np.log(2)
+          + np.log(np.linalg.det(W)))
+    entropy = -log_B(W, nu) - .5 * (nu - D - 1) * q1 + .5 * nu * D
+    return entropy
 
 
 class VariationalGMM:
@@ -33,7 +56,8 @@ class VariationalGMM:
         self.beta_k = None
         self.m_k = None
 
-    def fit(self, X, max_iter=100):
+    def fit(self, X, max_iter=100, elbo_epsilon=1e-5, logging_interval=5):
+        logger.info('Start fitting GMM in data')
         assert self.n_features == X.shape[1]
 
         self.max_iter = max_iter
@@ -51,17 +75,22 @@ class VariationalGMM:
             self.elbo_per_iter.append(elbo)
             self.checkpoints.append(self.get_checkpoint())
 
+            if i % logging_interval == 0:
+                logger.info('Iteration: %d', i)
+                logger.info('ELBO: %f', elbo)
+
             if len(self.elbo_per_iter) > 1 and elbo < self.elbo_per_iter[-2]:
                 logger.error('ELBO IS DECREASING!')
-            logger.info('Iteration: ', i)
-            logger.info('ELBO: ', elbo)
+
+            if (len(self.elbo_per_iter) > 1 and
+                    abs(elbo - self.elbo_per_iter[-2]) < elbo_epsilon):
+                break
         elapsed_time_secs = time.time() - start_time_secs
         time_delta = datetime.timedelta(seconds=elapsed_time_secs)
-        logger.info('Finished inference. Elapsed time: ',
-                    '{}:{}:{}'.format(time_delta.hours,
-                                      time_delta.minutes,
-                                      time_delta.seconds))
-        logger.debug('Variational mu:\n', self.m_k)
+        logger.info('Finished inference. Elapsed time: %s',
+                    '{} secs'.format(time_delta.seconds))
+        logger.debug('Variational mu:\n%s', np.array_str(self.m_k))
+        logger.debug('Variational W_k:\n%s', np.array_str(self.W_k))
 
     def get_variational_parameters(self):
         parameters = dict()
@@ -95,7 +124,7 @@ class VariationalGMM:
 
     def _m_step(self):
         # _N_k is a K vector
-        self._N_k = self.responsibilities.sum(axis=0)
+        self._N_k = self.responsibilities.sum(axis=0) + 1e-8
         assert self._N_k.shape == (self.n_components,)
 
         # nu_k is a K vector
