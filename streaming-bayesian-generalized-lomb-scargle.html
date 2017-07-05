@@ -11775,12 +11775,14 @@ div#notebook {
 
 <div class="cell border-box-sizing code_cell rendered">
 <div class="input">
-<div class="prompt input_prompt">In&nbsp;[58]:</div>
+<div class="prompt input_prompt">In&nbsp;[2]:</div>
 <div class="inner_cell">
     <div class="input_area">
 <div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">streaming_gmm</span> <span class="k">import</span> <span class="n">lightcurve</span>
 <span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
 <span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+
 
 <span class="o">%</span><span class="k">matplotlib</span> inline
 <span class="o">%</span><span class="k">load_ext</span> autoreload
@@ -11790,23 +11792,6 @@ div#notebook {
 </pre></div>
 
 </div>
-</div>
-</div>
-
-<div class="output_wrapper">
-<div class="output">
-
-
-<div class="output_area">
-<div class="prompt"></div>
-
-<div class="output_subarea output_stream output_stdout output_text">
-<pre>The autoreload extension is already loaded. To reload it, use:
-  %reload_ext autoreload
-</pre>
-</div>
-</div>
-
 </div>
 </div>
 
@@ -11824,7 +11809,7 @@ its period.</p>
 </div>
 <div class="cell border-box-sizing code_cell rendered">
 <div class="input">
-<div class="prompt input_prompt">In&nbsp;[48]:</div>
+<div class="prompt input_prompt">In&nbsp;[3]:</div>
 <div class="inner_cell">
     <div class="input_area">
 <div class=" highlight hl-ipython3"><pre><span></span><span class="n">lightcurve_df</span> <span class="o">=</span> <span class="n">lightcurve</span><span class="o">.</span><span class="n">read_from_file</span><span class="p">(</span><span class="n">LC_PATH</span><span class="p">,</span> <span class="n">skiprows</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
@@ -11839,7 +11824,7 @@ its period.</p>
 </div>
 <div class="cell border-box-sizing code_cell rendered">
 <div class="input">
-<div class="prompt input_prompt">In&nbsp;[49]:</div>
+<div class="prompt input_prompt">In&nbsp;[4]:</div>
 <div class="inner_cell">
     <div class="input_area">
 <div class=" highlight hl-ipython3"><pre><span></span><span class="n">color</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span> <span class="p">,</span><span class="mf">0.498039</span><span class="p">,</span> <span class="mf">0.313725</span><span class="p">]</span>
@@ -12515,7 +12500,7 @@ CAShIIxDIBAIBKEgjEMgEAgEoSCMQyAQCAShIIxDIBAIBKEgjEMgEAgEoSCMQyAQCASh8P8Bjd5M
 </div>
 <div class="cell border-box-sizing code_cell rendered">
 <div class="input">
-<div class="prompt input_prompt">In&nbsp;[75]:</div>
+<div class="prompt input_prompt">In&nbsp;[5]:</div>
 <div class="inner_cell">
     <div class="input_area">
 <div class=" highlight hl-ipython3"><pre><span></span><span class="k">def</span> <span class="nf">plot_folded_lightcurve</span><span class="p">(</span><span class="n">time</span><span class="p">,</span> <span class="n">mag</span><span class="p">,</span> <span class="n">period</span><span class="p">):</span>
@@ -12549,7 +12534,7 @@ is correct.</p>
 </div>
 <div class="cell border-box-sizing code_cell rendered">
 <div class="input">
-<div class="prompt input_prompt">In&nbsp;[88]:</div>
+<div class="prompt input_prompt">In&nbsp;[6]:</div>
 <div class="inner_cell">
     <div class="input_area">
 <div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">gatspy.periodic</span> <span class="k">import</span> <span class="n">LombScargleFast</span>
@@ -13129,7 +13114,7 @@ generalized LS algorithm that I implemented. We should see the same period.</p>
 </div>
 <div class="cell border-box-sizing code_cell rendered">
 <div class="input">
-<div class="prompt input_prompt">In&nbsp;[89]:</div>
+<div class="prompt input_prompt">In&nbsp;[7]:</div>
 <div class="inner_cell">
     <div class="input_area">
 <div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">streaming_gmm.streaming_features</span> <span class="k">import</span> <span class="n">StreamingBGLS</span>
@@ -13663,6 +13648,230 @@ OAzDMIxQmOAwDMMwQvH/AVXYLnqBOeLXAAAAAElFTkSuQmCC
 <h2 id="Streaming-experiment">Streaming experiment<a class="anchor-link" href="#Streaming-experiment">&#182;</a></h2>
 </div>
 </div>
+</div>
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+<div class="prompt input_prompt">In&nbsp;[8]:</div>
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">import</span> <span class="nn">time</span> <span class="k">as</span> <span class="nn">tm</span>
+</pre></div>
+
+</div>
+</div>
+</div>
+
+</div>
+<div class="cell border-box-sizing text_cell rendered">
+<div class="prompt input_prompt">
+</div>
+<div class="inner_cell">
+<div class="text_cell_render border-box-sizing rendered_html">
+<h3 id="Bayesian-Lomb-Scargle">Bayesian Lomb-Scargle<a class="anchor-link" href="#Bayesian-Lomb-Scargle">&#182;</a></h3>
+</div>
+</div>
+</div>
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+<div class="prompt input_prompt">In&nbsp;[9]:</div>
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="kn">from</span> <span class="nn">streaming_gmm.streaming_lightcurve</span> <span class="k">import</span> <span class="n">to_chunks</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">StreamingBGLS</span><span class="p">(</span><span class="n">freq_multiplier</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+
+<span class="n">bgls_batch_times</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="n">start_time_sec</span> <span class="o">=</span> <span class="n">tm</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">time</span><span class="p">,</span> <span class="n">mag</span><span class="p">,</span> <span class="n">error</span> <span class="ow">in</span> <span class="n">to_chunks</span><span class="p">(</span><span class="n">lightcurve_df</span><span class="p">):</span>
+    <span class="n">batch_start_time_sec</span> <span class="o">=</span> <span class="n">tm</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">time</span><span class="p">,</span> <span class="n">mag</span><span class="p">,</span> <span class="n">error</span><span class="p">)</span>
+    <span class="n">periods</span><span class="p">,</span> <span class="n">probability</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">periodogram</span><span class="p">()</span>
+    <span class="n">batch_elapsed_time_sec</span> <span class="o">=</span> <span class="n">tm</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">batch_start_time_sec</span>
+    <span class="n">bgls_batch_times</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">batch_elapsed_time_sec</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Most probable period:&#39;</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">most_probable_period</span><span class="p">())</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Batch elapsed time:&#39;</span><span class="p">,</span> <span class="n">batch_elapsed_time_sec</span><span class="p">,</span> <span class="s1">&#39;secs&#39;</span><span class="p">)</span>
+<span class="n">elapsed_time_sec</span> <span class="o">=</span> <span class="n">tm</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time_sec</span>
+<span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Total time for lightcurve:&#39;</span><span class="p">,</span> <span class="n">elapsed_time_sec</span><span class="p">,</span> <span class="s1">&#39;secs&#39;</span><span class="p">)</span>
+</pre></div>
+
+</div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+
+<div class="output_area">
+<div class="prompt"></div>
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>Most probable period: 0.683131059115
+Batch elapsed time: 0.02073073387145996 secs
+Most probable period: 0.936587498634
+Batch elapsed time: 0.03162884712219238 secs
+Most probable period: 0.936587498634
+Batch elapsed time: 0.0483393669128418 secs
+Most probable period: 0.936587498634
+Batch elapsed time: 0.06672906875610352 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.0745236873626709 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.0851283073425293 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.08765339851379395 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.1030428409576416 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.11824893951416016 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.13242650032043457 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.13657808303833008 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.1547555923461914 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.1534886360168457 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.16692399978637695 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.16939258575439453 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.19720697402954102 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.19038152694702148 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.21308565139770508 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.22824645042419434 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.2446742057800293 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.2913482189178467 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.3288261890411377 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.2806723117828369 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.303560733795166 secs
+Most probable period: 0.937169928064
+Batch elapsed time: 0.2862555980682373 secs
+Total time for lightcurve: 4.123648166656494 secs
+</pre>
+</div>
+</div>
+
+</div>
+</div>
+
+</div>
+<div class="cell border-box-sizing code_cell rendered">
+<div class="input">
+<div class="prompt input_prompt">In&nbsp;[10]:</div>
+<div class="inner_cell">
+    <div class="input_area">
+<div class=" highlight hl-ipython3"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">LombScargleFast</span><span class="p">()</span>
+
+<span class="n">accum_time</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="n">accum_mag</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="n">accum_error</span> <span class="o">=</span> <span class="kc">None</span>
+
+<span class="n">n_chunks</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="n">gatspy_elapsed_time</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="n">start_time_sec</span> <span class="o">=</span> <span class="n">tm</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">time</span><span class="p">,</span> <span class="n">mag</span><span class="p">,</span> <span class="n">error</span> <span class="ow">in</span> <span class="n">to_chunks</span><span class="p">(</span><span class="n">lightcurve_df</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">n_chunks</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">accum_time</span> <span class="o">=</span> <span class="n">time</span>
+        <span class="n">accum_mag</span> <span class="o">=</span> <span class="n">mag</span>
+        <span class="n">accum_error</span> <span class="o">=</span> <span class="n">error</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">accum_time</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">accum_time</span><span class="p">,</span> <span class="n">time</span><span class="p">))</span>
+        <span class="n">accum_mag</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">accum_mag</span><span class="p">,</span> <span class="n">mag</span><span class="p">))</span>
+        <span class="n">accum_error</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">accum_error</span><span class="p">,</span> <span class="n">error</span><span class="p">))</span>
+    <span class="n">batch_start_time_sec</span> <span class="o">=</span> <span class="n">tm</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">accum_time</span><span class="p">,</span> <span class="n">accum_mag</span><span class="p">,</span> <span class="n">accum_error</span><span class="p">)</span>
+    <span class="n">periods</span><span class="p">,</span> <span class="n">power</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">periodogram_auto</span><span class="p">(</span><span class="n">nyquist_factor</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+    <span class="n">period</span> <span class="o">=</span> <span class="n">periods</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">argmax</span><span class="p">(</span><span class="n">power</span><span class="p">)]</span>
+    <span class="n">batch_elapsed_time_sec</span> <span class="o">=</span> <span class="n">tm</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">batch_start_time_sec</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Most probable period:&#39;</span><span class="p">,</span> <span class="n">period</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Batch elapsed time:&#39;</span><span class="p">,</span> <span class="n">batch_elapsed_time_sec</span><span class="p">,</span> <span class="s1">&#39;secs&#39;</span><span class="p">)</span>
+    <span class="n">n_chunks</span> <span class="o">+=</span> <span class="mi">1</span>
+<span class="n">elapsed_time_sec</span> <span class="o">=</span> <span class="n">tm</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time_sec</span>
+<span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Total time for lightcurve:&#39;</span><span class="p">,</span> <span class="n">elapsed_time_sec</span><span class="p">,</span> <span class="s1">&#39;secs&#39;</span><span class="p">)</span>
+</pre></div>
+
+</div>
+</div>
+</div>
+
+<div class="output_wrapper">
+<div class="output">
+
+
+<div class="output_area">
+<div class="prompt"></div>
+
+<div class="output_subarea output_stream output_stdout output_text">
+<pre>Most probable period: 0.406074926764
+Batch elapsed time: 0.025894880294799805 secs
+Most probable period: 0.936494166667
+Batch elapsed time: 0.06267976760864258 secs
+Most probable period: 0.936184345291
+Batch elapsed time: 0.10761761665344238 secs
+Most probable period: 0.937007391775
+Batch elapsed time: 0.10631680488586426 secs
+Most probable period: 0.937187355201
+Batch elapsed time: 0.20750832557678223 secs
+Most probable period: 0.937218442211
+Batch elapsed time: 0.22347474098205566 secs
+Most probable period: 0.937098343158
+Batch elapsed time: 0.22404098510742188 secs
+Most probable period: 0.937087651693
+Batch elapsed time: 0.23876571655273438 secs
+Most probable period: 0.936758854075
+Batch elapsed time: 0.4926297664642334 secs
+Most probable period: 0.936919177215
+Batch elapsed time: 0.4402003288269043 secs
+Most probable period: 0.936949980935
+Batch elapsed time: 0.621720552444458 secs
+Most probable period: 0.936989885293
+Batch elapsed time: 0.4637014865875244 secs
+Most probable period: 0.936979685347
+Batch elapsed time: 0.4785938262939453 secs
+Most probable period: 0.936915862461
+Batch elapsed time: 0.487565279006958 secs
+Most probable period: 0.936977791275
+Batch elapsed time: 0.44266796112060547 secs
+Most probable period: 0.936963875387
+Batch elapsed time: 0.4511685371398926 secs
+Most probable period: 0.937022230994
+Batch elapsed time: 1.0342578887939453 secs
+Most probable period: 0.936935571678
+Batch elapsed time: 0.8769059181213379 secs
+Most probable period: 0.937032785802
+Batch elapsed time: 0.8624751567840576 secs
+Most probable period: 0.936991355309
+Batch elapsed time: 0.8840608596801758 secs
+Most probable period: 0.936961696532
+Batch elapsed time: 0.8845655918121338 secs
+Most probable period: 0.936957454495
+Batch elapsed time: 0.8566138744354248 secs
+Most probable period: 0.9369620536
+Batch elapsed time: 1.3040316104888916 secs
+Most probable period: 0.936985929542
+Batch elapsed time: 1.4475347995758057 secs
+Most probable period: 0.93697445905
+Batch elapsed time: 0.8858067989349365 secs
+Total time for lightcurve: 14.124265909194946 secs
+</pre>
+</div>
+</div>
+
+</div>
+</div>
+
 </div>
 <div class="cell border-box-sizing code_cell rendered">
 <div class="input">

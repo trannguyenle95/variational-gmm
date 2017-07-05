@@ -1,21 +1,26 @@
+import logging
+
 import numpy as np
 
 
-def _check_arrays_size(time, magnitude, error):
+logger = logging.getLogger(__name__)
+
+
+def _check_arrays_size(time, magnitude, new_error):
     same_shape = (time.shape[0] == magnitude.shape[0]
-                  and time.shape[0] == error.shape[0]
-                  and magnitude.shape[0] == error.shape[0])
+                  and time.shape[0] == new_error.shape[0]
+                  and magnitude.shape[0] == new_error.shape[0])
     if not same_shape:
-        error_message = ("time, magnitude and error must have same number"
+        error_message = ("time, magnitude and new_error must have same number"
                          " of samples: {}, {} and {} respectively".format(
                              time.shape[0], magnitude.shape[0],
-                             error.shape[0]))
+                             new_error.shape[0]))
         raise ValueError(error_message)
 
 
 class StreamingFeature:
 
-    def update(self, time, magnitude, error):
+    def update(self, time, magnitude, new_error):
         raise NotImplementedError()
 
 
@@ -44,14 +49,16 @@ class StreamingBGLS(StreamingFeature):
         self.ofac = ofac
 
         self.acumulated_samples = 0
+        self.number_of_updates = 0
 
         frequency_num = .5 * self.ofac * self.phigh * freq_multiplier
         self.frequency = np.linspace(1. / self.phigh, 1. / self.plow,
                                      frequency_num)
         self.period = 1. / self.frequency
 
+        self.w_i = None
+        self.magnitude = None
         self.omega = 2 * np.pi * self.frequency
-        self.omega_time = None
 
         self.W = 0.
         self.Y = 0.
@@ -62,8 +69,8 @@ class StreamingBGLS(StreamingFeature):
         self.S = 0.
         self.CC_hat = 0.
         self.SS_hat = 0.
-        self._theta_up = 0.
-        self._theta_down = 0.
+        self._theta_up = np.zeros((self.frequency.shape))
+        self._theta_down = np.zeros((self.frequency.shape))
 
         # Create this variables here, so we don't have to allocate memory
         # every time self.update() is called.
@@ -78,49 +85,48 @@ class StreamingBGLS(StreamingFeature):
     def most_probable_period(self):
         return self.period[np.argmax(self.probability)]
 
-    def update(self, time, magnitude, error):
-        _check_arrays_size(time, magnitude, error)
+    def is_first_update(self):
+        return self.number_of_updates == 0
 
-        n_samples = time.shape[0]
+    def update(self, new_time, new_magnitude, new_error):
+        _check_arrays_size(new_time, new_magnitude, new_error)
+
+        n_samples = new_time.shape[0]
         self.acumulated_samples += n_samples
-
-        error_sq = error ** 2
+        logger.info('Received %d new samples', n_samples)
 
         # eq. 8
-        w_i = 1. / error_sq
+        new_w_i = 1. / (new_error ** 2)
 
         # eq. 9
-        self.W += w_i.sum()
+        self.W += new_w_i.sum()
 
         # eq. 10
-        self.Y += (w_i * magnitude).sum()
+        self.Y += (new_w_i * new_magnitude).sum()
 
-        # current_omega_time is a (frequency, time) matrix
-        current_omega_time = self.omega[:, np.newaxis] * time[np.newaxis, :]
-        self._theta_up += (w_i[np.newaxis, :] *
-                           np.sin(2 * current_omega_time)).sum(axis=1)
-        self._theta_down += (w_i[np.newaxis, :] *
-                             np.cos(2 * current_omega_time)).sum(axis=1)
-        theta = .5 * np.arctan2(self._theta_up, self._theta_down)
-        x = current_omega_time - theta[:, np.newaxis]
+        theta = self._compute_theta(new_time, new_w_i)
+
+        self._update_w_i(new_w_i)
+        self._update_magnitude(new_magnitude)
+        x = self.omega_time - theta[:, np.newaxis]
 
         cos_x = np.cos(x)
         sin_x = np.sin(x)
-        w_cos_x = w_i[np.newaxis, :] * cos_x
-        w_sin_x = w_i[np.newaxis, :] * sin_x
+        w_cos_x = self.w_i[np.newaxis, :] * cos_x
+        w_sin_x = self.w_i[np.newaxis, :] * sin_x
 
         # eq. 14
-        self.C += w_cos_x.sum(axis=1)
+        self.C = w_cos_x.sum(axis=1)
         # eq. 15
-        self.S += w_sin_x.sum(axis=1)
+        self.S = w_sin_x.sum(axis=1)
         # eq. 12
-        self.YC_hat += (magnitude * w_cos_x).sum(axis=1)
+        self.YC_hat = (self.magnitude * w_cos_x).sum(axis=1)
         # eq. 13
-        self.YS_hat += (magnitude * w_sin_x).sum(axis=1)
+        self.YS_hat = (self.magnitude * w_sin_x).sum(axis=1)
         # eq. 16
-        self.CC_hat += (w_cos_x * cos_x).sum(axis=1)
+        self.CC_hat = (w_cos_x * cos_x).sum(axis=1)
         # eq. 17
-        self.SS_hat += (w_sin_x * sin_x).sum(axis=1)
+        self.SS_hat = (w_sin_x * sin_x).sum(axis=1)
 
         self._case_with_positives()
         self._case_with_zeros()
@@ -132,6 +138,39 @@ class StreamingBGLS(StreamingFeature):
         log_p -= log_p.max()
         prob = 10 ** log_p
         self.probability = prob / prob.sum()
+
+        self._reset_tmp_arrays()
+        self.number_of_updates += 1
+
+    def _update_w_i(self, new_w_i):
+        if self.is_first_update():
+            self.w_i = new_w_i
+        else:
+            self.w_i = np.concatenate((self.w_i, new_w_i))
+
+    def _update_omega_time(self, new_omega_time):
+        if self.is_first_update():
+            self.omega_time = new_omega_time
+        else:
+            self.omega_time = np.concatenate(
+                (self.omega_time, new_omega_time), axis=1)
+
+    def _update_magnitude(self, new_magnitude):
+        if self.is_first_update():
+            self.magnitude = new_magnitude
+        else:
+            self.magnitude = np.concatenate((self.magnitude, new_magnitude))
+
+    def _compute_theta(self, time, new_w_i):
+        # new_omega_time is a (frequency, time) matrix
+        new_omega_time = self.omega[:, np.newaxis] * time[np.newaxis, :]
+        self._update_omega_time(new_omega_time)
+        self._theta_up += (new_w_i[np.newaxis, :] *
+                           np.sin(2 * new_omega_time)).sum(axis=1)
+        self._theta_down += (new_w_i[np.newaxis, :] *
+                             np.cos(2 * new_omega_time)).sum(axis=1)
+        theta = .5 * np.arctan2(self._theta_up, self._theta_down)
+        return theta
 
     def _case_with_positives(self):
         ind = (self.CC_hat != 0) & (self.SS_hat != 0)
@@ -167,3 +206,10 @@ class StreamingBGLS(StreamingFeature):
 
         self._constants[ind] = (1. / np.sqrt(self.CC_hat[ind] *
                                              np.abs(self._K[ind])))
+
+    def _reset_tmp_arrays(self):
+        logger.debug('Resetting tmp arrays to zero')
+        self._K.fill(0)
+        self._L.fill(0)
+        self._M.fill(0)
+        self._constants.fill(0)
