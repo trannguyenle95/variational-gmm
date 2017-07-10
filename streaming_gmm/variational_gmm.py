@@ -26,15 +26,15 @@ def log_B(W, nu):
              factor is well defined.
     """
     D = W.shape[1]
-    q1 = -.5 * nu * np.linalg.det(W)
-    q2 = (.5 * nu * D
-          + .25 * D * (D - 1) * np.pi
+    q1 = -.5 * nu * np.log(np.linalg.det(W))
+    q2 = (nu * D / 2. * np.log(2.)
+          + D * (D - 1) / 4. * np.log(np.pi)
           + np.sum(gammaln(.5 * (nu - np.arange(D)))))
     return q1 - q2
 
 
 def wishart_entropy(W, nu):
-    """Return the Wishart entropy (eq. B.28 of Bishop).
+    """Return the Wishart entropy (eq. B.82 of Bishop).
 
        Parameters:
        W -- D x D symmetric positive definite matrix.
@@ -55,7 +55,6 @@ class VariationalGMM:
     def __init__(self, n_components, n_features, **kwargs):
         self.n_components = n_components
         self.n_features = n_features
-        self.N = 0
 
         # Hyperparameters initialization
         self.alpha_0 = kwargs.get('alpha_0', .1)
@@ -119,9 +118,12 @@ class VariationalGMM:
         return parameters
 
     def get_checkpoint(self):
-        checkpoint = self.get_variational_parameters()
+        checkpoint = dict()
+        checkpoint['variational_parameters'] = \
+            self.get_variational_parameters()
         checkpoint['elbo'] = self.elbo_per_iter[-1]
         checkpoint['iteration'] = len(self.checkpoints)
+        checkpoint['pi_k_expectation'] = self.calculate_E_pi_k()
         return checkpoint
 
     def get_results(self):
@@ -138,6 +140,10 @@ class VariationalGMM:
         out['checkpoints'] = self.checkpoints
         out['variational_parameters'] = self.get_variational_parameters()
         return out
+
+    def calculate_E_pi_k(self):
+        return (self.alpha_k + self._N_k) / (self.n_components * self.alpha_0 +
+                                             self.N)
 
     def _m_step(self):
         # _N_k is a K vector
