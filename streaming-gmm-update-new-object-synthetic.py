@@ -3,39 +3,117 @@
 
 # # Streaming Gaussian Mixture Model
 # 
-# ## Update features when a new observation arrives
-# 
-# TODO
-# 
-# ## Update the classifier
+# ## Updating the model when a new object arrives
 # 
 # ### General idea
 # 
-# Let $X = \{ x_1, \dotsc, x_N \}$ a collection of $N$ points. Now, lets suppose that the features of $x_j$ are updated, and lets call $x_j^{\star}$ the updated point. Lastly, lets define $X_{-j} = \{ x_1, \dotsc, x_{j-1}, x_{j+1}, \dotsc, x_N \}$.
+# Let $X_1 = \{ x_1, \dotsc, x_N \}$ a collection of $N$ data points generated iid according to a distribution $p(x \mid \Theta)$ given parameter(s) $\Theta$. By Bayes theorem, the _posterior distribution_ of $\Theta$ given $X_1$ is
 # 
-# The posterior before $x_j$ moves, and using $P(\Theta)$ as the prior is
+# \begin{equation}
+# p(\Theta \mid X_1) \propto p(X_1 \mid \Theta)p(\Theta)
+# \end{equation}
 # 
-# $$P(\Theta \mid X) \propto P(X \mid \Theta)P(\Theta)$$,
+# Now, if we want to estimate the posterior of a new collection $X_2 = \{ x_{N+1}, \dotsc, x_{2N} \}$ of data points, the update would be
 # 
-# where $P(X \mid \Theta) = \prod_i^N P(x_i \mid \Theta)$.
+# \begin{align}
+# p(\Theta \mid X_2, X_1) &\propto p(X_2, X_1 \mid \Theta)p(\Theta) \\
+# p(\Theta \mid X_2, X_1) &\propto p(X_2 \mid \Theta)p(X_1 \mid \Theta)p(\Theta) \\
+# p(\Theta \mid X_2, X_1) &\propto p(X_2 \mid \Theta)p(\Theta \mid X_1)
+# \end{align}
 # 
-# Now, after $x_j$ moves to $x_j^{\star}$, the posterior is
+# Then, the posterior of collection $b$, after seeing $b - 1$ collection is
 # 
-# \begin{align*}
-# P(\Theta \mid X_{-j}, x_j^{\star}) &\propto P(X_{-j}, x_j^{\star} \mid \Theta)P(\Theta) \\
-# &\propto P(X_{-j} \mid \Theta)P(x_j^{\star} \mid \Theta)P(\Theta) \\
-# &\propto \frac{P(X \mid \Theta)}{P(x_j \mid \Theta)}P(x_j^{\star} \mid \Theta)P(\Theta) \\
-# &\propto \frac{P(x_j^{\star} \mid \Theta)}{P(x_j \mid \Theta)}P(X \mid \Theta)P(\Theta) \\
-# &\propto \frac{P(x_j^{\star} \mid \Theta)}{P(x_j \mid \Theta)}P(\Theta \mid X)
-# \end{align*}
+# \begin{equation}
+# p(\Theta \mid X_b, \dotsc, X_1) \propto p(X_b \mid \Theta)p(\Theta \mid X_{b-1}, \dotsc, X_1)
+# \end{equation}.
+# 
+# Following [1], we assume that we approximate the posterior using 
+# *variational inference*. That is, we assume that we can approximate the posterior of a collection of points with a function $q$, such that
+# 
+# \begin{align}
+# p(\Theta \mid X_b) \propto q_b(\Theta)
+# \end{align}
+# 
+# Also, we assume that $p(\Theta)$ is an exponential family distribution for $\Theta$ with sufficients statistic $T(\Theta)$ and natural parameter $\xi_0$. We suppose further that if $q(\Theta)$ is the approximate posterior obtained using variational inference, then $q(\Theta)$ is also in the same exponential family, with natural parameter $\xi$ such that
+# 
+# \begin{equation}
+# q(\Theta) \propto \text{exp}(\xi \cdot T(\Theta))
+# \end{equation}
+# 
+# When we make this assumptions, the update for $b$ collections is 
+# 
+# \begin{align}
+# p(\Theta \mid X_b, \dotsc, X_1) &\propto \left [\prod_{i=1}^B p(X_i \mid \Theta)\right ]p(\Theta) \\ 
+# p(\Theta \mid X_b, \dotsc, X_1) &\propto \left [\prod_{i=1}^B p(\Theta \mid X_i)p(\Theta)^{-1} \right ]p(\Theta) \\
+# p(\Theta \mid X_b, \dotsc, X_1) &\approx \left [\prod_{i=1}^B q_i(\Theta)p(\Theta)^{-1} \right ]p(\Theta) \\
+# p(\Theta \mid X_b, \dotsc, X_1) &\approx \text{exp} \left (\left [\xi_0 + \sum_{i=1}^B (\xi_b - \xi_0) \right ] \cdot T(\Theta) \right) \\
+# \end{align}.
 # 
 # ### Mixture of GMM update
+# 
+# The mean field approximation for the GMM is
+# 
+# \begin{equation}
+# p(\boldsymbol{\pi}, \boldsymbol{\mu}, \boldsymbol{\Lambda} \mid X) \approx q(\boldsymbol{\pi})q(\boldsymbol{\mu}, \boldsymbol{\Lambda})
+# \end{equation}
+# 
+# where 
+# 
+# \begin{align}
+# q(\boldsymbol{\pi}) &= Dir(\boldsymbol{\pi} \mid \boldsymbol{\alpha}) \\
+# q(\boldsymbol{\mu}, \boldsymbol{\Lambda}) &= \mathcal{N}(\boldsymbol{\mu} \mid \mathbf{m}, (\beta\boldsymbol{\Lambda})^{-1})\mathcal{W}(\boldsymbol{\Lambda} \mid \mathbf{W}, \nu)
+# \end{align}
+# 
+# #### Dirichlet update
+# 
+# The natural parameter for the dirichlet is:
+# 
+# \begin{equation}
+# \xi = \boldsymbol{\alpha}_k - 1
+# \end{equation}
+# 
+# hence, the update is:
+# 
+# \begin{equation}
+# \boldsymbol{\alpha}_k' \leftarrow \boldsymbol{\alpha}_k + (\boldsymbol{\alpha}_k^{\star} - \boldsymbol{\alpha}_0)
+# \end{equation}
+# 
+# #### Normal-Wishart update
+# 
+# The natural parameter for the Normal-Wishart distribution is:
+# 
+# \begin{equation}
+# \xi = \begin{bmatrix}
+#        \beta_k\boldsymbol{m}_k           \\[0.3em]
+#        \beta_k \\[0.3em]
+#        \boldsymbol{W}_k^{-1} + \beta\boldsymbol{m}_k\boldsymbol{m}_k^T \\[0.3em]
+#        \nu_k + 2 + p
+#      \end{bmatrix}
+# \end{equation},
+# 
+# hence, the updates are:
+# 
+# \begin{align}
+# \beta_k' &\leftarrow \beta_k + (\beta_k^{\star} - \beta_0) \\
+# \boldsymbol{m}_k' &\leftarrow \frac{1}{\beta_k'}(\beta_k\boldsymbol{m}_k + (\beta_k^{\star}\boldsymbol{m}_k^{\star} - \beta_0\boldsymbol{m}_0) \\
+# \boldsymbol{W}_k^{-1} &\leftarrow (\boldsymbol{W}_k^{-1} + \beta_k\boldsymbol{m}_k\boldsymbol{m}_k^T) + (\boldsymbol{W}_k^{-1\star} + \beta_k^{\star}\boldsymbol{m}_k^{\star}\boldsymbol{m}_k^{T\star}) - \beta_k\boldsymbol{m}_k\boldsymbol{m}_k^T \\
+# \nu_k' &\leftarrow \nu_k + (\nu_k^{\star} - \nu_0) \\
+# \end{align}
+# 
+# 
+# ## Current problems
+# 
+# * Component identification
+# 
+# ## References
+# 
+# [1]: Tamara Broderick, Nicholas Boyd, Andre Wibisono, Ashia C. Wilson, and Michael I. Jordan. 2013. Streaming variational bayes. In Proceedings of the 26th International Conference on Neural Information Processing Systems (NIPS'13), C. J. C. Burges, L. Bottou, M. Welling, Z. Ghahramani, and K. Q. Weinberger (Eds.). Curran Associates Inc., , USA, 1727-1735.
 
 # ## Synthetic data generation
 # 
 # In the cell below we are going to generate synthetic data from multiple GMMs (one GMM per class).
 
-# In[18]:
+# In[1]:
 
 import pandas as pd
 import numpy as np
@@ -46,6 +124,8 @@ import scipy
 
 import logging
 logging.basicConfig(level=logging.DEBUG)
+
+logger = logging.getLogger(__name__)
 
 get_ipython().magic('matplotlib inline')
 get_ipython().magic('load_ext autoreload')
@@ -65,7 +145,7 @@ CLASS_COLORS = ['#66c2a5',
                 '#b3b3b3']
 
 
-# In[19]:
+# In[2]:
 
 class GMMDataGenerator:
      
@@ -134,7 +214,7 @@ class GMMDataGenerator:
                 self._mu_0 + mu_center_k, self.cov[j, :])
 
 
-# In[20]:
+# In[3]:
 
 def plot_gmm_obs(X, C, title='', ax=None):
     xlabel = 'x'
@@ -160,7 +240,7 @@ def plot_gmm_obs(X, C, title='', ax=None):
         plt.ylabel(ylabel)
 
 
-# In[21]:
+# In[4]:
 
 pal = sns.light_palette((200, 75, 60), input="husl", as_cmap=True)
 
@@ -190,7 +270,7 @@ def plot_gmm(X, mu, W, ax=None):
             plt.contour(x, y, f_z, antialiased=True, cmap=pal)
 
 
-# In[22]:
+# In[5]:
 
 M = 1
 
@@ -208,20 +288,29 @@ print('Cov:\n', synthetic_gmm.get_cov())
 
 
 # # New data batch generation
+# 
+# In the following cell we generate batches of the synthetic GMM.
 
-# In[23]:
+# In[6]:
 
 n_batchs = 10
 
 X_batchs = []
 C_batchs = []
 for i in range(n_batchs):
-    new_X, new_C = synthetic_gmm.generate(n=200)
+    new_X, new_C = synthetic_gmm.generate(n=1000)
     X_batchs.append(new_X)
     C_batchs.append(new_C)
 
 
-# In[24]:
+# In[7]:
+
+plot_gmm_obs(np.concatenate(X_batchs), np.concatenate(C_batchs))
+
+
+# In the cell bellow we can see the data generated in each batch.
+
+# In[8]:
 
 cols = 4
 rows = n_batchs // cols + 1
@@ -230,14 +319,14 @@ for i in range(rows):
     for j in range(cols):
         index = i * cols + j
         if index < n_batchs:
-            plot_gmm_obs(np.concatenate(X_batchs[:index + 1]), 
-                         np.concatenate(C_batchs[:index + 1]), 
+            plot_gmm_obs(X_batchs[index], 
+                         C_batchs[index], 
                          ax=ax[i, j])
             #plot_gmm_obs(X_batchs[index], C_batchs[index], ax=ax[i, j])
 plt.show()
 
 
-# In[25]:
+# In[9]:
 
 import json
 
@@ -250,11 +339,12 @@ result_list = []
 debug_dict = {}
 #streaming_vb_gmm = VariationalGMM(K, D)
 for i in range(1, n_batchs + 1):
+    logger.info('Starting batch %d', i)
     #X = np.concatenate(X_batchs[:i])
     X = X_batchs[i-1]
     #streaming_vb_gmm.update_with_new_data(X)
     vbGmm = VariationalGMM(K, D, alpha_0=.01)
-    vbGmm.fit(X, max_iter=20)
+    vbGmm.fit(X, max_iter=50)
     #batch_result = streaming_vb_gmm.get_checkpoint()
     result_list.append(vbGmm.get_checkpoint())
 #plot_gmm(X, vbGmm.m_k, np.linalg.inv(vbGmm.nu_k[:, np.newaxis, np.newaxis]*vbGmm.W_k))
@@ -272,7 +362,7 @@ with open('logs/variational_gmm_results.json', 'w') as outfile:
     json.dump(debug_dict, outfile)
 
 
-# In[26]:
+# In[10]:
 
 cols = 4
 rows = n_batchs // cols + 1
@@ -295,12 +385,12 @@ for i in range(rows):
 plt.show()
 
 
-# In[27]:
+# In[12]:
 
 from streaming_gmm.streaming_variational_gmm import StreamingVariationalGMM, VariationalGMM
 
 result_list = []
-streaming_vb_gmm = StreamingVariationalGMM(K, D, alpha_0=.01)
+streaming_vb_gmm = StreamingVariationalGMM(K, D, max_iter=50, alpha_0=.01)
 for X, C in zip(X_batchs, C_batchs): 
     streaming_vb_gmm.update_with_new_data(X)
     #vbGmm = VariationalGMM(K, D)
@@ -311,7 +401,7 @@ result_list = streaming_vb_gmm.checkpoints
 #plot_gmm(X, vbGmm.m_k, np.linalg.inv(vbGmm.nu_k[:, np.newaxis, np.newaxis]*vbGmm.W_k))
 
 
-# In[28]:
+# In[13]:
 
 cols = 4
 rows = n_batchs // cols + 1
@@ -336,51 +426,7 @@ plt.show()
 
 # In[ ]:
 
-print(np.squeeze(X[np.where(C == 0), :]).shape)
 
-
-# In[ ]:
-
-get_ipython().run_cell_magic('time', '', 'from vbmm.varmix import run\n\nmu, W, vk = run(np.squeeze(X[np.where(C == 0), :]), K)\nW = np.asarray(W)')
-
-
-# In[ ]:
-
-print(np.linalg.inv(W))
-
-
-# In[ ]:
-
-print(W.shape)
-plot_gmm(X, mu, np.linalg.inv(vk[:, np.newaxis, np.newaxis]*W))
-print(mu)
-print(synthetic_gmm.get_mu())
-
-
-# In[ ]:
-
-from vb_mgmm.var_bayes_gmm import VariationalGMM
-
-
-# In[ ]:
-
-# We want to fail fast
-np.seterr(all='raise')
-
-
-# In[ ]:
-
-get_ipython().run_cell_magic('time', '', "vbGmm = VariationalGMM(K, D)\nprint(vbGmm.get_model())\n#vbGmm.get_model()\n#vbGmm.fit(np.squeeze(X[np.where(C == 0), :]), max_iter=20, verbose=True)\n#print('Real mu:\\n', synthetic_gmm.get_mu())")
-
-
-# In[ ]:
-
-plot_gmm(X, vbGmm.m_k, np.linalg.inv(vbGmm.nu_k[:, np.newaxis, np.newaxis]*vbGmm.W_k))
-
-
-# In[ ]:
-
-import vb_mgmm.streaming_vbgmm
 
 
 # In[ ]:
