@@ -24,6 +24,120 @@ class StreamingFeature:
         raise NotImplementedError()
 
 
+class StreamingAOV(StreamingFeature):
+
+    def __init__(self, number_of_bins=10, plow=.01, phigh=2, step=1e-3):
+        self.number_of_bins = number_of_bins
+        self.periods = np.arange(plow, phigh, step=step)
+        self.periods_len = self.periods.shape[0]
+        self.aov_per_period = np.zeros_like(self.periods)
+        self.acumulated_samples = 0
+
+        self._magnitude_average = 0.
+        self._inv_error_sq_sum = 0.
+        self._magnitude_sq_sum = 0.
+        self._magnitude_sum = 0.
+        self._bins = np.linspace(0., 1., num=self.number_of_bins + 1)
+
+        period_bin_map_size = (self.periods_len, self.number_of_bins)
+        self._bin_average_map = np.zeros(period_bin_map_size)
+        self._bin_magnitude_sq_sum_map = np.zeros(period_bin_map_size)
+        self._bin_magnitude_sum_map = np.zeros(period_bin_map_size)
+        self._bin_inv_error_sq_sum_map = np.zeros(period_bin_map_size)
+        self._bin_acumulated_samples = np.zeros(period_bin_map_size)
+
+    def get_period(self):
+        max_aov_idx = np.argmax(self.aov_per_period)
+        return self.periods[max_aov_idx]
+
+    def update(self, new_time, new_magnitude, new_error):
+        _check_arrays_size(new_time, new_magnitude, new_error)
+
+        new_samples = new_time.shape[0]
+        self.acumulated_samples += new_samples
+        self._update_magnitude_avg(new_magnitude, new_error)
+
+        for period_idx in range(self.periods_len):
+            self.aov_per_period[period_idx] = self._compute_aov_of_period(
+                new_time,
+                new_magnitude,
+                new_error,
+                period_idx)
+
+    def _compute_aov_of_period(self, new_time, new_magnitude, new_error,
+                               period_idx):
+        period = self.periods[period_idx]
+        phi = np.mod(new_time, period) / period
+        s1 = 0.
+        s2 = 0.
+        for bin_ in range(self.number_of_bins):
+            idx_bin = np.where(np.logical_and(phi >= self._bins[bin_],
+                                              phi < self._bins[bin_ + 1]))[0]
+            if len(idx_bin) == 0.0:
+                continue
+
+            old_error_sum = self._bin_inv_error_sq_sum_map[period_idx][bin_]
+
+            self._bin_acumulated_samples[period_idx][bin_] += \
+                new_magnitude[idx_bin].shape[0]
+            self._bin_magnitude_sq_sum_map[period_idx][bin_] += np.sum(
+                new_magnitude[idx_bin] ** 2)
+            self._bin_magnitude_sum_map[period_idx][bin_] += np.sum(
+                new_magnitude[idx_bin])
+            self._bin_inv_error_sq_sum_map[period_idx][bin_] += np.sum(
+                1. / new_error[idx_bin] ** 2)
+
+            period_bin = (period_idx, bin_)
+            new_bin_average = self._compute_bin_average(old_error_sum,
+                                                        period_bin,
+                                                        new_magnitude[idx_bin],
+                                                        new_error[idx_bin])
+            s1 += (self._bin_acumulated_samples[period_idx][bin_]
+                   * (new_bin_average - self._magnitude_average) ** 2)
+            s2 += self._compute_s2(period_bin, new_bin_average)
+            self._bin_average_map[period_idx][bin_] = new_bin_average
+        s1 = s1 / (self.number_of_bins - 1)
+        s2 = s2 / (self.acumulated_samples - self.number_of_bins)
+        return s1 / s2
+
+    def _update_magnitude_avg(self, new_magnitude, new_error):
+        old_magnitude_weighted_sum = (self._inv_error_sq_sum
+                                      * self._magnitude_average)
+
+        new_sigma = 1 / (new_error ** 2)
+        new_magnitude_weighted_sum = np.sum(new_magnitude * new_sigma)
+        self._inv_error_sq_sum += np.sum(new_sigma)
+
+        new_magnitude_average = (old_magnitude_weighted_sum
+                                 + new_magnitude_weighted_sum)
+        new_magnitude_average /= self._inv_error_sq_sum
+        self._magnitude_average = new_magnitude_average
+
+    def _compute_s2(self, period_bin, bin_average):
+        period_idx = period_bin[0]
+        bin_ = period_bin[1]
+        bin_average_sq = bin_average ** 2
+        sum_mag_sq = self._bin_magnitude_sq_sum_map[period_idx][bin_]
+        sum_mag = self._bin_magnitude_sum_map[period_idx][bin_]
+        N = self._bin_acumulated_samples[period_idx][bin_]
+        return (sum_mag_sq - 2 * bin_average * sum_mag + N * bin_average_sq)
+
+    def _compute_bin_average(self, old_error_sum,
+                             period_bin,
+                             new_magnitude,
+                             new_error):
+        period_idx = period_bin[0]
+        bin_ = period_bin[1]
+        old_bin_weighted_sum = (old_error_sum
+                                * self._bin_average_map[period_idx][bin_])
+        new_bin_weighted_sum = np.sum(new_magnitude * 1. / (new_error ** 2))
+
+        new_bin_average = old_bin_weighted_sum + new_bin_weighted_sum
+        new_bin_average /= self._bin_inv_error_sq_sum_map[period_idx][bin_]
+
+        return new_bin_average
+
+
 class StreamingBGLS(StreamingFeature):
 
     def __init__(self, plow=.5, phigh=100, ofac=.6, freq_multiplier=100):
