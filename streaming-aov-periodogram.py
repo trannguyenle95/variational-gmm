@@ -210,10 +210,10 @@ plt.plot([max_aov, max_aov], ylims, linewidth=10, alpha=.25)
 
 # #### Plot of the evolution of the periodogram with the number of observations
 
-# In[60]:
+# In[61]:
 
 cols = 3
-rows = len(periodograms[:21]) // cols + 1
+rows = len(periodograms[:21]) // cols
 f, ax = plt.subplots(rows, cols, figsize=(15, 15))
 points_seen = 0
 for i in range(rows):
