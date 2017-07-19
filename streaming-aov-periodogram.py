@@ -1,16 +1,39 @@
 
 # coding: utf-8
 
-# In[1]:
+# In[16]:
 
 import numpy as np
-get_ipython().magic('matplotlib inline')
 import matplotlib.pylab as plt
+from streaming_gmm import lightcurve, streaming_aov
+import logging
+import time as tm
 
 
-# In[ ]:
+get_ipython().magic('matplotlib inline')
+get_ipython().magic('load_ext autoreload')
+get_ipython().magic('autoreload 2')
+
+LC_PATH = 'data/lc_1.3444.614.B.mjd'
 
 
+# In[51]:
+
+def plot_periodogram(periods, s_aov, ax, title=''):
+    p = periods[np.argmax(s_aov)]
+    ax.plot(periods, s_aov)
+    ax.set_title(title)
+    ax.set_xlabel('Period')
+    ax.set_ylabel('AOV Periodogram')
+    ylims = ax.get_ylim()
+    ax.plot([p, p], ylims, linewidth=10, alpha=.25)
+
+
+# ## Synthetic light curve
+# 
+# In the cell below, we create a synthetic lightcurve with a known period.
+
+# In[3]:
 
 t = np.linspace(0.0, 10.0, num=100)
 Pt = 0.532421
@@ -25,173 +48,186 @@ plt.errorbar(np.mod(t, Pt)/Pt, y, e, fmt='.')
 N = len(t)
 
 
-# In[ ]:
+# ### Calculating period using P4J
+# 
+# First, as a sanity check, we use [P4J](https://github.com/phuijse/P4J) library to calculated the true period of our synthetic lightcurve.
 
-r = 10
-bin_start = np.linspace(0.0, 1.0, num=r+1)
-periods = np.arange(0.01, 2.0, step=1e-3)
-s_aov = np.zeros(shape=(len(periods),))
-yavg = np.average(y, weights=1.0/e**2)
-    
-for i, P in enumerate(periods):
-    phi = np.mod(t, P)/P
-    s1 = 0.0
-    s2 = 0.0
-    for j in range(r):
-        idx_bin = np.where(np.logical_and(phi >= bin_start[j], phi < bin_start[j+1]))[0]
-        if len(idx_bin) == 0.0:
-            continue
-        yavgi = np.average(y[idx_bin], weights=1.0/e[idx_bin]**2)
-        s1 += len(idx_bin)*(yavgi - yavg)**2
-        s2 += np.sum((y[idx_bin] - yavgi)**2)
-    s1 = s1/(r-1)
-    s2 = s2/(N - r)
-    s_aov[i] = s1/s2
-    
-plt.plot(periods, s_aov)
+# In[4]:
+
+import P4J
+
+p4j_model = P4J.periodogram(method='QMIEU')
+p4j_model.set_data(t, y, e)
+
+p4j_model.frequency_grid_evaluation(fmin=0.01, fmax=5.0, fresolution=1e-3)
+p4j_model.finetune_best_frequencies(fresolution=0.01, n_local_optima=10)
+freq, per = p4j_model.get_periodogram()
+
+p4j_period = 1. / p4j_model.get_best_frequency()
+print('Period: ', p4j_period)
+
+plt.plot(1. / freq, per)
+plt.xlim([0, 2.0])
 ylims = plt.ylim()
-plt.plot([Pt, Pt], ylims, linewidth=10, alpha=0.25)
-_ = plt.ylim(ylims)
+plt.plot([p4j_period, p4j_period], ylims, linewidth=10, alpha=.25)
 
 
-# In[2]:
+# ### Calculating the period using own implementation of AOV
+# 
+# We try to retrieve the correct period using our implementation of AOV period. **This period calculation is not in a streaming setting**.
 
-from streaming_gmm import lightcurve
-import logging
+# In[5]:
+
+model = streaming_aov.StreamingAOV(plow=0.01, phigh=2.0, step=1e-3)
+
+start_calculating_period_secs = tm.time()
+model.update(t, y, e)
+elapsed_time = tm.time() - start_calculating_period_secs
+
+print('Periodogram calculated in: {} secs'.format(elapsed_time))
+
+periods, aov = model.get_periodogram()
+max_aov = model.get_period()
+print('Period: ', model.get_period())
+plt.plot(periods, aov)
+ylims = plt.ylim()
+plt.plot([max_aov, max_aov], ylims, linewidth=10, alpha=.25)
 
 
-get_ipython().magic('matplotlib inline')
-get_ipython().magic('load_ext autoreload')
-get_ipython().magic('autoreload 2')
+# ## Real lightcurve
+# 
+# Now we load a lightcurve from the MACHO dataset, and try to get its period.
 
-LC_PATH = 'data/lc_1.3444.614.B.mjd'
-
-
-# In[3]:
+# In[25]:
 
 lightcurve_df = lightcurve.read_from_file(LC_PATH, skiprows=3)
 lightcurve_df = lightcurve.remove_unreliable_observations(lightcurve_df)
 time, mag, error = lightcurve.unpack_df_in_arrays(lightcurve_df)
+real_period = 0.937
+print('Real period:', real_period)
 
 
-# In[4]:
+# In[23]:
 
-def get_period(time, mag, error):
-    r = 10
-    bin_start = np.linspace(0.0, 1.0, num=r+1)
-    periods = np.arange(0.01, 2.0, step=1e-3)
-    s_aov = np.zeros(shape=(len(periods),))
-    yavg = np.average(mag, weights=1.0/error**2)
-    N = time.shape[0]
+def plot_folded_lightcurve(time, mag, period):
+    color = [0.392157, 0.584314 ,0.929412]
+    T = 2 * period
+    new_b = np.mod(time, period) / period
+    idx = np.argsort(2 * new_b)
+    plt.plot(new_b, mag, '*', color=color)
+    plt.xlabel("Phase")
+    plt.ylabel("Magnitude")
+    plt.gca().invert_yaxis()
 
-    for i, P in enumerate(periods):
-        phi = np.mod(time, P)/P
-        s1 = 0.0
-        s2 = 0.0
-        for j in range(r):
-            idx_bin = np.where(np.logical_and(phi >= bin_start[j], phi < bin_start[j+1]))[0]
-            if len(idx_bin) == 0.0:
-                continue
-            yavgi = np.average(mag[idx_bin], weights=1.0/error[idx_bin]**2)
-            s1 += len(idx_bin)*(yavgi - yavg)**2
-            s2 += np.sum((mag[idx_bin] - yavgi)**2)
-        s1 = s1/(r-1)
-        s2 = s2/(N - r)
-        s_aov[i] = s1/s2
-    
-    return periods, s_aov
-    
-periods, s_aov = get_period(time, mag, error)
-Pt = np.argmax(s_aov)
-plt.plot(periods, s_aov)
+
+# In[24]:
+
+plt.figure()
+plt.plot(time, mag, '*', alpha=0.25)
+
+plt.figure()
+plot_folded_lightcurve(time, mag, real_period)
+
+
+# ### Calculating period using P4J
+
+# In[26]:
+
+p4j_model = P4J.periodogram(method='QMIEU')
+p4j_model.set_data(time, mag, error)
+
+p4j_model.frequency_grid_evaluation(fmin=0.01, fmax=5.0, fresolution=1e-3)
+p4j_model.finetune_best_frequencies(fresolution=0.01, n_local_optima=10)
+freq, per = p4j_model.get_periodogram()
+
+p4j_period = 1. / p4j_model.get_best_frequency()
+print('Period: ', p4j_period)
+
+plt.plot(1. / freq, per)
+plt.xlim([0, 2.0])
 ylims = plt.ylim()
-#plt.plot([Pt, Pt], ylims, linewidth=10, alpha=0.25)
-#_ = plt.ylim(ylims)
-qq = np.argmax(s_aov)
-print(periods[qq])
+plt.plot([p4j_period, p4j_period], ylims, linewidth=10, alpha=.25)
 
 
-# In[10]:
+# ### Calculating the period using own AOV implementation
+
+# In[28]:
+
+model = streaming_aov.StreamingAOV(plow=0.01, phigh=2.0, step=1e-3)
+
+start_calculating_period_secs = tm.time()
+model.update(time, mag, error)
+elapsed_time = tm.time() - start_calculating_period_secs
+
+print('Periodogram calculated in: {} secs'.format(elapsed_time))
+
+periods, aov = model.get_periodogram()
+max_aov = model.get_period()
+print('Period: ', model.get_period())
+plt.plot(periods, aov)
+ylims = plt.ylim()
+plt.plot([max_aov, max_aov], ylims, linewidth=10, alpha=.25)
+
+
+# ### Calculating the period in a streaming way using AOV
+
+# In[36]:
 
 from streaming_gmm.streaming_lightcurve import to_chunks
-from streaming_gmm.streaming_features import StreamingAOV
+from streaming_gmm.streaming_aov import StreamingAOV
 
-def calculate_s2(time, mag, error, real_period):
-    s2 = 0
-    s1 = 0
-    s2_false = 0
-    yavg = np.average(mag, weights=1.0/error**2)
-    print('normal yavg ', yavg)
-    phi = np.mod(time, real_period)/real_period
-    for j in range(r):
-        idx_bin = np.where(np.logical_and(phi >= bin_start[j], phi < bin_start[j+1]))[0]
-        if len(idx_bin) == 0.0:
-            continue
-        yavgi = np.average(mag[idx_bin], weights=1.0/error[idx_bin]**2)
-        s1 += len(idx_bin)*(yavgi - yavg)**2
-        s2 += np.sum((mag[idx_bin] - yavgi)**2)
-        s2_false = np.sum(mag[idx_bin] ** 2) - 2 * yavgi * np.sum(mag[idx_bin]) + len(idx_bin) * yavgi ** 2
-
-r = 10
-bin_start = np.linspace(0.0, 1.0, num=r+1)
 real_period = 0.937
 model = StreamingAOV()
-for time, mag, error in to_chunks(lightcurve_df):
+periodograms = []
+
+CHUNK_SIZE = 25
+
+start_time = tm.time()
+for time, mag, error in to_chunks(lightcurve_df, chunk_size=CHUNK_SIZE):
+    batch_start_time = tm.time()
     model.update(time, mag, error)
-#print('streaming mag avg ', model._magnitude_average)
-#print('streaming yavgi ', model._bin_average_map)
-#print('streaming mag sq', model._bin_magnitude_sq_sum_map)
-#print('streaming mag ', model._bin_magnitude_sum_map)
-#print('streaming samples ', model._bin_acumulated_samples)
-print('streaming period ', model.get_period())
-
-time, mag, error = lightcurve.unpack_df_in_arrays(lightcurve_df)
-calculate_s2(time, mag, error, real_period)
+    batch_elapsed_time = tm.time() - batch_start_time
+    #print('Batch took {} secs'.format(batch_elapsed_time))
+    periods, aov = model.get_periodogram()
+    batch_size = time.shape[0]
     
-#print('streaming final', model._s2)
+    # We copy the aov array because if not it is updated with the last
+    # model array.
+    periodograms.append((periods, np.copy(aov), batch_size))
+end_time = tm.time()
+print('Number of batches:', len(periodograms))
+print('Observations per batch:', CHUNK_SIZE)
+print('Streaming period ', model.get_period())
+print('Elapsed time for {} batches: {} secs'.format(len(periodograms),
+                                                    end_time - start_time))
+
+periods, aov = model.get_periodogram()
+max_aov = model.get_period()
+plt.plot(periods, aov)
+ylims = plt.ylim()
+plt.plot([max_aov, max_aov], ylims, linewidth=10, alpha=.25)
 
 
-# In[ ]:
+# #### Plot of the evolution of the periodogram with the number of observations
 
-print(model._s2)
+# In[60]:
 
-
-# In[ ]:
-
-def f(mag, y):
-    return np.sum((mag - y) ** 2)
-
-def f2(mag, y):
-    return np.
-
-mag1 = np.random.random(size=10) * 10
-mag2 = np.concatenate([mag1, np.random.random(size=10) * 10])
-
-plt.plot(np.arange(-100, 100), np.asarray([f(mag1, y) for y in np.arange(-100, 100)]))
-#plt.plot(np.arange(-100, 100), np.asarray([f(mag2, y) for y in np.arange(-100, 100)]))
-
-
-# In[ ]:
-
-y0 = 5
-y1 = 7
-
-arr_y1 = np.arange(-100, 100, step=.1)
-
-#f0 = np.sum((mag - y0) ** 2)
-
-def approx_f(mag, y0, y1):
-    N = mag.shape[0]
-    sq_mag = np.sum(mag ** 2)
-    lin_mag = np.sum(mag)
-    return sq_mag - 2 * y1 * lin_mag + N * (y1 ** 2)
-
-def f(mag, y1):
-    return np.sum((mag - y1) ** 2)
-
-print(approx_f(mag, 0, 3), f(mag, 3))
-#plt.plot(arr_y1, np.asarray([approx_f(mag, y0, y) for y in arr_y1]))
-#plt.plot(arr_y1, np.asarray([f(mag, y) for y in arr_y1]))
+cols = 3
+rows = len(periodograms[:21]) // cols + 1
+f, ax = plt.subplots(rows, cols, figsize=(15, 15))
+points_seen = 0
+for i in range(rows):
+    for j in range(cols):
+        index = i * cols + j
+        if index < len(periodograms[:21]):
+            periods, s_aov, batch_size = periodograms[index]
+            points_seen += batch_size
+            plot_periodogram(periods, s_aov, ax[i, j], 
+                             title='Num of observations = {}'.format(
+                                 points_seen))
+plt.subplots_adjust(wspace=0.5)
+plt.subplots_adjust(hspace=.9)
+plt.show()
 
 
 # In[ ]:
