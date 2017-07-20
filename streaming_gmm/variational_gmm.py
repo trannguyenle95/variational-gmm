@@ -6,6 +6,7 @@ import numpy as np
 from scipy.misc import logsumexp
 from scipy.special import gammaln
 from scipy.special.basic import digamma
+from scipy.stats import wishart, multivariate_normal
 
 
 logger = logging.getLogger(__name__)
@@ -31,23 +32,6 @@ def log_B(W, nu):
           + D * (D - 1) / 4. * np.log(np.pi)
           + np.sum(gammaln(.5 * (nu - np.arange(D)))))
     return q1 - q2
-
-
-def wishart_entropy(W, nu):
-    """Return the Wishart entropy (eq. B.82 of Bishop).
-
-       Parameters:
-       W -- D x D symmetric positive definite matrix.
-       nu -- number of degrees of freedom of the distribution, restricted to
-             nu > D - 1 to ensure that the Gamma function in the normalization
-             factor is well defined.
-    """
-    D = W.shape[1]
-    q1 = (np.sum(digamma(.5 * (nu - np.arange(D))))
-          + D * np.log(2)
-          + np.log(np.linalg.det(W)))
-    entropy = -log_B(W, nu) - .5 * (nu - D - 1) * q1 + .5 * nu * D
-    return entropy
 
 
 class VariationalGMM:
@@ -96,7 +80,7 @@ class VariationalGMM:
                 logger.info('ELBO: %f', elbo)
 
             if len(self.elbo_per_iter) > 1 and elbo < self.elbo_per_iter[-2]:
-                logger.error('ELBO IS DECREASING!')
+                logger.warning('ELBO IS DECREASING!')
 
             if (len(self.elbo_per_iter) > 1 and
                     abs(elbo - self.elbo_per_iter[-2]) < elbo_epsilon):
@@ -107,6 +91,27 @@ class VariationalGMM:
                     '{} secs'.format(time_delta.seconds))
         logger.debug('Variational mu:\n%s', np.array_str(self.m_k))
         logger.debug('Variational W_k:\n%s', np.array_str(self.W_k))
+
+    def predict(self, x):
+        # tmp = (self.nu_k + 1 - self.n_features) * \
+        #     self.beta_k / (self.beta_k + 1)
+        # L_k = np.linalg.inv(tmp[:, np.newaxis, np.newaxis] * self.W_k)
+        # assert L_k.shape == self.W_k.shape
+
+        alpha_hat = np.sum(self.alpha_k)
+
+        expected_lambda_inv_k = np.linalg.inv(
+            self.nu_k[:, np.newaxis, np.newaxis] * self.W_k)
+
+        predictive = .0
+        for k in range(self.n_components):
+            predictive += self.alpha_k[k] * \
+                multivariate_normal.pdf(x,
+                                        mean=self.m_k[k],
+                                        cov=expected_lambda_inv_k[k])
+        predictive /= alpha_hat
+
+        return predictive
 
     def get_variational_parameters(self):
         parameters = dict()
@@ -211,51 +216,29 @@ class VariationalGMM:
         assert self.responsibilities.shape == (self.N, self.n_components)
 
     def _calculate_elbo(self):
-        E_ln_p_X = 0.0
-        for k in range(self.n_components):
-            q1 = self.nu_k[k] * np.trace(np.dot(self._S_k[k], self.W_k[k]))
-            diff = self._x_k_hat[k] - self.m_k[k]
-            q2 = self.nu_k[k] * np.dot(diff, self.W_k[k]).dot(diff.T)
-            E_ln_p_X += self._N_k[k] * (self._expec_log_det_lambda[k]
-                                        - self.n_features / self.beta_k[k]
-                                        - q1
-                                        - q2
-                                        - self.n_features * np.log(2 * np.pi))
-        E_ln_p_X = .5 * E_ln_p_X
+        # Eq. 10.71
+        E_ln_p_X = self._calculate_expected_log_likelihood()
 
+        # Eq. 10.72
         E_ln_p_Z = np.sum(self.responsibilities * self._expec_log_pi_k)
 
+        # Eq. 10.73
         E_ln_p_pi = (log_C(self.alpha_0 * np.ones(self.n_components))
                      + (self.alpha_0 - 1) * np.sum(self._expec_log_pi_k))
 
-        q1 = np.sum(self._expec_log_det_lambda)
-        q2 = 0.0
-        q3 = 0.0
-        for k in range(self.n_components):
-            q3 += self.nu_k[k] * np.trace(np.dot(self.inv_W_0, self.W_k[k]))
-            diff = self.m_k[k] - self.m_0
-            q2_1 = np.dot(diff, self.W_k[k]).dot(diff.T)
-            q2 += (self.n_features * np.log(self.beta_0 / (2 * np.pi))
-                   + self._expec_log_det_lambda[k]
-                   - self.n_features * self.beta_0 / self.beta_k[k]
-                   - self.beta_0 * self.nu_k[k] * q2_1)
-        E_ln_p_mu_lamb = (.5 * q2
-                          + self.n_components * log_B(self.W_0, self.nu_0)
-                          + .5 * (self.nu_0 - self.n_features - 1) * q1
-                          - .5 * q3)
+        # Eq. 10.74
+        E_ln_p_mu_lamb = self._calculate_expected_log_p_mu_lamb()
 
+        # Eq. 10.75
         E_ln_q_Z = np.sum(self.responsibilities
                           * np.log(self.responsibilities))
 
+        # Eq. 10.76
         E_ln_q_pi = (np.sum((self.alpha_k - 1) * self._expec_log_pi_k)
                      + log_C(self.alpha_k))
-        E_ln_q_mu_lamb = 0.0
-        for k in range(self.n_components):
-            E_ln_q_mu_lamb += (.5 * self._expec_log_det_lambda[k]
-                               + (.5 * self.n_features
-                                  * np.log(self.beta_k[k] / (2 * np.pi)))
-                               - .5 * self.n_features
-                               - wishart_entropy(self.W_k[k], self.nu_k[k]))
+
+        # Eq. 10.77
+        E_ln_q_mu_lamb = self._calculate_expected_log_q_mu_lamb()
 
         return (E_ln_p_X + E_ln_p_Z + E_ln_p_pi + E_ln_p_mu_lamb
                 - E_ln_q_Z - E_ln_q_pi - E_ln_q_mu_lamb)
@@ -335,3 +318,49 @@ class VariationalGMM:
                             + self.n_features * np.log(2)
                             + np.log(np.linalg.det(self.W_k)))
         return E_log_det_lambda
+
+    def _calculate_expected_log_likelihood(self):
+        """
+        Return blah.
+        Eq. 10.71 from Bishop.
+        """
+        E_ln_p_X = 0.0
+        for k in range(self.n_components):
+            tmp1 = self.nu_k[k] * np.trace(np.dot(self._S_k[k], self.W_k[k]))
+            diff = self._x_k_hat[k] - self.m_k[k]
+            tmp2 = self.nu_k[k] * np.dot(diff, self.W_k[k]).dot(diff.T)
+            E_ln_p_X += self._N_k[k] * (self._expec_log_det_lambda[k]
+                                        - self.n_features / self.beta_k[k]
+                                        - tmp1
+                                        - tmp2
+                                        - self.n_features * np.log(2 * np.pi))
+        return E_ln_p_X / 2.
+
+    def _calculate_expected_log_p_mu_lamb(self):
+        q1 = np.sum(self._expec_log_det_lambda)
+        q2 = 0.0
+        q3 = 0.0
+        for k in range(self.n_components):
+            q3 += self.nu_k[k] * np.trace(np.dot(self.inv_W_0, self.W_k[k]))
+            diff = self.m_k[k] - self.m_0
+            q2_1 = np.dot(diff, self.W_k[k]).dot(diff.T)
+            q2 += (self.n_features * np.log(self.beta_0 / (2 * np.pi))
+                   + self._expec_log_det_lambda[k]
+                   - self.n_features * self.beta_0 / self.beta_k[k]
+                   - self.beta_0 * self.nu_k[k] * q2_1)
+        E_ln_p_mu_lamb = (.5 * q2
+                          + self.n_components * log_B(self.W_0, self.nu_0)
+                          + .5 * (self.nu_0 - self.n_features - 1) * q1
+                          - .5 * q3)
+        return E_ln_p_mu_lamb
+
+    def _calculate_expected_log_q_mu_lamb(self):
+        E_ln_q_mu_lamb = 0.0
+        for k in range(self.n_components):
+            E_ln_q_mu_lamb += (.5 * self._expec_log_det_lambda[k]
+                               + (.5 * self.n_features
+                                  * np.log(self.beta_k[k] / (2 * np.pi)))
+                               - .5 * self.n_features
+                               - wishart.entropy(scale=self.W_k[k],
+                                                 df=self.nu_k[k]))
+        return E_ln_q_mu_lamb
