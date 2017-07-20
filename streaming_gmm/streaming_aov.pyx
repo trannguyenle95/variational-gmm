@@ -9,21 +9,21 @@ cdef extern from "math.h":
     double fmod(double, double)
 
 
-cdef double sum_of_squares_arr(double[:] arr):
+cdef double sum_of_squares_arr(double[::1] arr):
     cdef double acumulated_sum_of_sq = 0
     for i in range(arr.shape[0]):
         acumulated_sum_of_sq += arr[i] * arr[i]
     return acumulated_sum_of_sq
 
 
-cdef double sum_arr(double[:] arr):
+cdef double sum_arr(double[::1] arr):
     cdef double acumulated_sum = 0
     for i in range(arr.shape[0]):
         acumulated_sum += arr[i]
     return acumulated_sum
 
 
-cdef double sum_of_inv_squares_arr(double[:] arr):
+cdef double sum_of_inv_squares_arr(double[::1] arr):
     cdef double acumulated_sum_of_inv_sq = 0
     cdef double tmp
     for i in range(arr.shape[0]):
@@ -33,8 +33,8 @@ cdef double sum_of_inv_squares_arr(double[:] arr):
     return acumulated_sum_of_inv_sq
 
 
-cdef double sum_of_arr1_times_inv_squares_arr2(double[:] arr1,
-                                               double[:] arr2):
+cdef double sum_of_arr1_times_inv_squares_arr2(double[::1] arr1,
+                                               double[::1] arr2):
     if (arr1.shape[0] != arr2.shape[0]):
         raise ValueError("Arrays must have same size")
     cdef double acumulated_sum = 0
@@ -46,7 +46,7 @@ cdef double sum_of_arr1_times_inv_squares_arr2(double[:] arr1,
     return acumulated_sum
 
 
-cdef void phase_of_arr(double[:] arr, double q, double[:] out):
+cdef void phase_of_arr(double[::1] arr, double q, double[::1] out):
     for i in range(arr.shape[0]):
         out[i] = fmod(arr[i], q) / q
 
@@ -68,24 +68,24 @@ cdef class StreamingAOV:
     cdef int number_of_bins
     cdef int periods_len
     cdef int acumulated_samples
-    cdef double [:] periods
-    cdef double[:] aov_per_period
+    cdef double[::1] periods
+    cdef double[::1] aov_per_period
 
     cdef double _magnitude_average
     cdef double _inv_error_sq_sum
     cdef double _magnitude_sq_sum
     cdef double _magnitude_sum
 
-    cdef double[:] _bins
-    cdef double[:,:] _bin_average_map
-    cdef double[:,:] _bin_magnitude_sq_sum_map
-    cdef double[:,:] _bin_magnitude_sum_map
-    cdef double[:,:] _bin_inv_error_sq_sum_map
-    cdef int[:,:] _bin_acumulated_samples
+    cdef double[::1] _bins
+    cdef double[:,::1] _bin_average_map
+    cdef double[:,::1] _bin_magnitude_sq_sum_map
+    cdef double[:,::1] _bin_magnitude_sum_map
+    cdef double[:,::1] _bin_inv_error_sq_sum_map
+    cdef int[:,::1] _bin_acumulated_samples
 
-    cdef double[:] _phi
-    cdef double[:] _bin_mag
-    cdef double[:] _bin_error
+    cdef double[::1] _phi
+    cdef double[::1] _bin_mag
+    cdef double[::1] _bin_error
     cdef int _bin_mag_samples
     cdef int _bin_error_samples
 
@@ -112,15 +112,18 @@ cdef class StreamingAOV:
                                                 dtype=np.int32)
 
     def get_period(self):
-        max_aov_idx = np.argmax(np.asarray(self.aov_per_period))
+        cdef int max_aov_idx = np.argmax(np.asarray(self.aov_per_period))
         return self.periods[max_aov_idx]
 
     def get_periodogram(self):
-        return np.asarray(self.periods), np.asarray(self.aov_per_period)
+        # We copy the arrays to prevent others to change things in the
+        # internal array
+        return (np.copy(np.asarray(self.periods)),
+                np.copy(np.asarray(self.aov_per_period)))
 
-    def update(self, double[:] new_time,
-               double[:] new_magnitude,
-               double[:] new_error):
+    def update(self, double[::1] new_time,
+               double[::1] new_magnitude,
+               double[::1] new_error):
         _check_arrays_size(new_time, new_magnitude, new_error)
 
         new_samples = new_time.shape[0]
@@ -138,9 +141,9 @@ cdef class StreamingAOV:
                 new_error,
                 period_idx)
 
-    cdef _compute_aov_of_period(self, double[:] new_time,
-                                double[:] new_magnitude,
-                                double[:] new_error,
+    cdef _compute_aov_of_period(self, double[::1] new_time,
+                                double[::1] new_magnitude,
+                                double[::1] new_error,
                                 int period_idx):
         cdef double period = self.periods[period_idx]
         cdef double s1 = 0.
@@ -177,8 +180,8 @@ cdef class StreamingAOV:
         return s1 / s2
 
     cdef void _select_mag_error_in_bin(self, int bin_,
-                                       double[:] new_magnitude,
-                                       double[:] new_error):
+                                       double[::1] new_magnitude,
+                                       double[::1] new_error):
         self._bin_mag_samples = 0
         self._bin_error_samples = 0
 
@@ -193,8 +196,8 @@ cdef class StreamingAOV:
                 self._bin_mag[i] = 0
                 self._bin_error[i] = 0
 
-    cdef void _update_magnitude_avg(self, double[:] new_magnitude,
-                                    double[:] new_error):
+    cdef void _update_magnitude_avg(self, double[::1] new_magnitude,
+                                    double[::1] new_error):
         old_magnitude_weighted_sum = (self._inv_error_sq_sum
                                       * self._magnitude_average)
 

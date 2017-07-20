@@ -1,7 +1,7 @@
 
 # coding: utf-8
 
-# In[16]:
+# In[1]:
 
 import numpy as np
 import matplotlib.pylab as plt
@@ -15,9 +15,10 @@ get_ipython().magic('load_ext autoreload')
 get_ipython().magic('autoreload 2')
 
 LC_PATH = 'data/lc_1.3444.614.B.mjd'
+np.random.seed(732839711)
 
 
-# In[51]:
+# In[2]:
 
 def plot_periodogram(periods, s_aov, ax, title=''):
     p = periods[np.argmax(s_aov)]
@@ -59,7 +60,7 @@ import P4J
 p4j_model = P4J.periodogram(method='QMIEU')
 p4j_model.set_data(t, y, e)
 
-p4j_model.frequency_grid_evaluation(fmin=0.01, fmax=5.0, fresolution=1e-3)
+p4j_model.frequency_grid_evaluation(fmin=0.1, fmax=5.0, fresolution=1e-3)
 p4j_model.finetune_best_frequencies(fresolution=0.01, n_local_optima=10)
 freq, per = p4j_model.get_periodogram()
 
@@ -98,7 +99,7 @@ plt.plot([max_aov, max_aov], ylims, linewidth=10, alpha=.25)
 # 
 # Now we load a lightcurve from the MACHO dataset, and try to get its period.
 
-# In[25]:
+# In[6]:
 
 lightcurve_df = lightcurve.read_from_file(LC_PATH, skiprows=3)
 lightcurve_df = lightcurve.remove_unreliable_observations(lightcurve_df)
@@ -107,7 +108,7 @@ real_period = 0.937
 print('Real period:', real_period)
 
 
-# In[23]:
+# In[7]:
 
 def plot_folded_lightcurve(time, mag, period):
     color = [0.392157, 0.584314 ,0.929412]
@@ -120,7 +121,7 @@ def plot_folded_lightcurve(time, mag, period):
     plt.gca().invert_yaxis()
 
 
-# In[24]:
+# In[8]:
 
 plt.figure()
 plt.plot(time, mag, '*', alpha=0.25)
@@ -131,7 +132,7 @@ plot_folded_lightcurve(time, mag, real_period)
 
 # ### Calculating period using P4J
 
-# In[26]:
+# In[9]:
 
 p4j_model = P4J.periodogram(method='QMIEU')
 p4j_model.set_data(time, mag, error)
@@ -151,7 +152,7 @@ plt.plot([p4j_period, p4j_period], ylims, linewidth=10, alpha=.25)
 
 # ### Calculating the period using own AOV implementation
 
-# In[28]:
+# In[10]:
 
 model = streaming_aov.StreamingAOV(plow=0.01, phigh=2.0, step=1e-3)
 
@@ -171,7 +172,7 @@ plt.plot([max_aov, max_aov], ylims, linewidth=10, alpha=.25)
 
 # ### Calculating the period in a streaming way using AOV
 
-# In[36]:
+# In[11]:
 
 from streaming_gmm.streaming_lightcurve import to_chunks
 from streaming_gmm.streaming_aov import StreamingAOV
@@ -193,7 +194,7 @@ for time, mag, error in to_chunks(lightcurve_df, chunk_size=CHUNK_SIZE):
     
     # We copy the aov array because if not it is updated with the last
     # model array.
-    periodograms.append((periods, np.copy(aov), batch_size))
+    periodograms.append((periods, aov, batch_size))
 end_time = tm.time()
 print('Number of batches:', len(periodograms))
 print('Observations per batch:', CHUNK_SIZE)
@@ -210,7 +211,7 @@ plt.plot([max_aov, max_aov], ylims, linewidth=10, alpha=.25)
 
 # #### Plot of the evolution of the periodogram with the number of observations
 
-# In[61]:
+# In[12]:
 
 cols = 3
 rows = len(periodograms[:21]) // cols
