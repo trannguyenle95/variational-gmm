@@ -1,6 +1,7 @@
 import numpy as np
 from .variational_gmm import VariationalGMM
 import logging
+from scipy.stats import wishart, multivariate_normal
 
 
 logger = logging.getLogger(__name__)
@@ -70,11 +71,12 @@ def swap_elements_at(map_from_to, numpy_array):
 
 class StreamingVariationalGMM:
 
-    def __init__(self, n_components, n_features, **kwargs):
+    def __init__(self, n_components, n_features, max_iter=50, **kwargs):
         self.checkpoints = []
         self.batch_checkpoints = []
         self.n_components = n_components
         self.n_features = n_features
+        self.max_iter = max_iter
 
         self.mixing_coefficient_threshold = 1e-4
 
@@ -137,6 +139,28 @@ class StreamingVariationalGMM:
                                               normal_wishart_params_new_data)
         self.checkpoints.append(self.get_checkpoint())
 
+    def predict(self, x):
+        tmp = (self.nu_k + 1 - self.n_features) * \
+             self.beta_k / (self.beta_k + 1)
+        L_k = np.linalg.inv(tmp[:, np.newaxis, np.newaxis] * self.W_k)
+        #L_k = tmp[:, np.newaxis, np.newaxis] * self.W_k
+        assert L_k.shape == self.W_k.shape
+
+        alpha_hat = np.sum(self.alpha_k)
+
+        #expected_lambda_inv_k = np.linalg.inv(
+        #    self.nu_k[:, np.newaxis, np.newaxis] * self.W_k)
+
+        predictive = .0
+        for k in range(self.n_components):
+            predictive += self.alpha_k[k] * \
+                multivariate_normal.pdf(x,
+                                        mean=self.m_k[k],
+                                        cov=L_k[k])
+        predictive /= alpha_hat
+
+        return predictive
+
     def _get_variational_parameters(self, X):
         variational_gmm = VariationalGMM(self.n_components,
                                          self.n_features,
@@ -145,7 +169,7 @@ class StreamingVariationalGMM:
                                          nu_0=self.nu_0,
                                          m_0=self.m_0,
                                          W_0=self.W_0)
-        variational_gmm.fit(X, max_iter=20)
+        variational_gmm.fit(X, max_iter=self.max_iter)
         variational_parameters = variational_gmm.get_variational_parameters()
         self._ignore_component_with_low_mixing_coef(
             variational_parameters, variational_gmm.calculate_E_pi_k())
