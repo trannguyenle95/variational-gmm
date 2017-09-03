@@ -4,6 +4,8 @@ import numpy as np
 import os.path
 import logging
 import sys
+import argparse
+from multiprocessing import Pool
 
 sys.path.append(os.path.abspath('../'))
 
@@ -19,6 +21,13 @@ logging.basicConfig(level=logging.INFO,
                     format=LOGGING_FORMAT,
                     stream=sys.stdout)
 logger = logging.getLogger(__name__)
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--n-processes",
+                    help="Number of processes for calculating the features",
+                    type=int,
+                    default=1)
+args = parser.parse_args()
 
 
 def _pack_observations_in_chunks(lightcurve_df):
@@ -40,10 +49,20 @@ def calculate_features_in_lightcurve(lc_file_band_1_path, lc_file_band_2_path):
     for obs_1, obs_2 in zip(observations_band_1, observations_band_2):
         logger.info("New observation for %s and %s",
                     lc_file_band_1_path, lc_file_band_2_path)
-        #lc_features.update(obs_1, obs_2)
+        lc_features.update(obs_1, obs_2)
 
 
-def calculate_features_in_dir(lc_dir):
+def calculate_features_of_file(lc_id, lc_files):
+    lc_has_two_bands = len(lc_files) == 2
+    if lc_has_two_bands:
+        stop_iter = True
+        logger.info("Calculating features for %s", lc_id)
+        calculate_features_in_lightcurve(lc_files[0], lc_files[1])
+    else:
+        logger.error("%s has %d bands", lc_id, len(lc_files))
+
+
+def calculate_features_in_dir(lc_dir, n_processes=1):
     lc_dir_path = '{}/{}'.format(PATH_MACHO, lc_dir)
     files_in_lc_dir = os.listdir(lc_dir_path)
     lc_files = filter(lambda f: f.startswith('lc_'), files_in_lc_dir)
@@ -56,16 +75,25 @@ def calculate_features_in_dir(lc_dir):
         else:
             lc_id_to_file[lc_id] = [lc_file_path]
 
-    for lc_id, lc_files in lc_id_to_file.items():
-        lc_has_two_bands = len(lc_files) == 2
-        if lc_has_two_bands:
-            calculate_features_in_lightcurve(lc_files[0], lc_files[1])
-        else:
-            logger.error("%s has %d bands", lc_id, len(lc_files))
+    pool = Pool(processes=n_processes)
+    pool.starmap(calculate_features_of_file, lc_id_to_file.items())
+    # stop_iter = False
+    # for lc_id, lc_files in lc_id_to_file.items():
+    #     if stop_iter:
+    #         break
+    #     lc_has_two_bands = len(lc_files) == 2
+    #     if lc_has_two_bands:
+    #         stop_iter = True
+    #         logger.info("Calculating features for %s", lc_id)
+    #         pool.map()
+    #         calculate_features_in_lightcurve(lc_files[0], lc_files[1])
+    #     else:
+    #         logger.error("%s has %d bands", lc_id, len(lc_files))
+
 
 logger.info("Calculating features in %s", os.path.abspath(PATH_MACHO))
 lc_dirs = [dir_ for dir_ in os.listdir(PATH_MACHO)
            if not dir_.startswith('.') and dir_ != 'non_variables']
 for lc_dir in lc_dirs:
     logger.info("Calculating features in %s", lc_dir)
-    calculate_features_in_dir(lc_dir)
+    calculate_features_in_dir(lc_dir, args.n_processes)
