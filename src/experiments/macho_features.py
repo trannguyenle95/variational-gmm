@@ -8,14 +8,12 @@ import argparse
 import pandas as pd
 from multiprocessing import Pool
 
-sys.path.append(os.path.abspath('../'))
+sys.path.append('{}/../'.format(os.path.dirname(os.path.abspath(__file__))))
 
 from streaming_gmm import lightcurve
 from streaming_gmm.features.lightcurve_features import LightCurveFeatures
 from streaming_gmm.streaming_lightcurve import to_chunks
 
-PATH_MACHO = '{}/{}'.format(os.path.dirname(os.path.abspath(__file__)),
-                            '../../data/macho-raw')
 
 LOGGING_FORMAT = '%(asctime)s|%(name)s|%(levelname)s: %(message)s'
 logging.basicConfig(level=logging.INFO,
@@ -24,6 +22,10 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 parser = argparse.ArgumentParser()
+parser.add_argument("machopath",
+                    help="Path of the macho dataset")
+parser.add_argument("outputdir",
+                    help="Path of the output dir")
 parser.add_argument("--n-processes",
                     help="Number of processes for calculating the features",
                     type=int,
@@ -72,8 +74,8 @@ def calculate_features_in_lightcurve(lc_file_band_1_path,
     return feature_values
 
 
-def calculate_features_of_file(lc_id, lc_files, lc_dir, chunk_size):
-    dir_name = 'streaming_macho_{}_chunks/{}'.format(chunk_size, lc_dir)
+def calculate_features_of_file(lc_id, lc_files, lc_dir, output_dir,
+                               chunk_size):
     lc_has_two_bands = len(lc_files) == 2
     if lc_has_two_bands:
         stop_iter = True
@@ -82,13 +84,16 @@ def calculate_features_of_file(lc_id, lc_files, lc_dir, chunk_size):
                                                               lc_files[1],
                                                               chunk_size)
         feature_df = pd.DataFrame(features_per_chunk)
-        feature_df.to_csv('{}/{}csv'.format(dir_name, lc_id))
+        file_path = '{}/{}csv'.format(output_dir, lc_id)
+        logger.info("Saving to %s", file_path)
+        feature_df.to_csv(file_path)
     else:
         logger.error("%s has %d bands", lc_id, len(lc_files))
 
 
-def calculate_features_in_dir(lc_dir, n_processes=1, chunk_size=20):
-    lc_dir_path = '{}/{}'.format(PATH_MACHO, lc_dir)
+def calculate_features_in_dir(lc_dir, path_macho, output_dir, n_processes=1,
+                              chunk_size=20):
+    lc_dir_path = '{}/{}'.format(path_macho, lc_dir)
     files_in_lc_dir = os.listdir(lc_dir_path)
     lc_files = filter(lambda f: f.startswith('lc_'), files_in_lc_dir)
     should_cancel = False
@@ -104,19 +109,24 @@ def calculate_features_in_dir(lc_dir, n_processes=1, chunk_size=20):
         else:
             lc_id_to_file[lc_id] = [lc_file_path]
 
-    args_for_computation = [(k, v, lc_dir, chunk_size)
+    args_for_computation = [(k, v, lc_dir, output_dir, chunk_size)
                             for k, v in lc_id_to_file.items()]
     pool = Pool(processes=n_processes)
     pool.starmap(calculate_features_of_file, args_for_computation)
 
 
-logger.info("Calculating features in %s", os.path.abspath(PATH_MACHO))
-lc_dirs = [dir_ for dir_ in os.listdir(PATH_MACHO)
+print(args)
+path_macho = args.machopath
+logger.info("Calculating features in %s", path_macho)
+lc_dirs = [dir_ for dir_ in os.listdir(path_macho)
            if not dir_.startswith('.') and dir_ != 'non_variables']
 for lc_dir in lc_dirs:
     logger.info("Calculating features in %s", lc_dir)
-    output_dir = os.path.dirname(
-        'streaming_macho_{}_chunks/{}'.format(args.chunk_size, lc_dir))
+    output_dir_path = '{}/streaming_{}_chunks/{}/'.format(args.outputdir,
+                                                          args.chunk_size,
+                                                          lc_dir)
+    output_dir = os.path.dirname(output_dir_path)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    calculate_features_in_dir(lc_dir, args.n_processes, args.chunk_size)
+    calculate_features_in_dir(lc_dir, path_macho, output_dir_path,
+                              args.n_processes, args.chunk_size)
