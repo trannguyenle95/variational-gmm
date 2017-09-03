@@ -124,7 +124,7 @@ class CARFeature(StreamingFeature):
 class Period(StreamingFeature):
 
     def __init__(self):
-        self._streaming_aov = StreamingAOV(plow=.01, phigh=100)
+        self._streaming_aov = StreamingAOV(plow=.01, phigh=5.0, step=1e-3)
 
     def value(self):
         return self._streaming_aov.get_period()
@@ -146,12 +146,13 @@ class LightCurveFeatures:
     def __init__(self, features=[]):
         if not features:
             features = list(self.FEATURES_MAP.keys())
-        self.features = [self.FEATURES_MAP[e]() for e in features]
+        self.features = {key: self.FEATURES_MAP[key]() for key in features}
 
-    def feature_vector(self):
-        values = [feature.value() for feature in self.features]
-        return np.asarray(values)
+    def values(self):
+        values_dict = {key: feature.value()
+                       for key, feature in self.features.items()}
+        return values_dict
 
     def update(self, observations, observations_other_band={}):
-        for feature in self.features:
+        for feature in self.features.values():
             feature.update(observations, observations_other_band)

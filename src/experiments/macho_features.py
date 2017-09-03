@@ -1,10 +1,11 @@
 """Script used for extracting MACHO dataset features in streaming form"""
 
 import numpy as np
-import os.path
+import os
 import logging
 import sys
 import argparse
+import pandas as pd
 from multiprocessing import Pool
 
 sys.path.append(os.path.abspath('../'))
@@ -27,68 +28,86 @@ parser.add_argument("--n-processes",
                     help="Number of processes for calculating the features",
                     type=int,
                     default=1)
+parser.add_argument("--chunk-size",
+                    help="Size of the observations chunk",
+                    type=int,
+                    default=20)
 args = parser.parse_args()
 
 
-def _pack_observations_in_chunks(lightcurve_df):
-    for time, mag, error in to_chunks(lightcurve_df, chunk_size=20):
+def _observations_in_chunk(chunk):
+    return chunk['time'].shape[0]
+
+
+def _pack_observations_in_chunks(lightcurve_df, chunk_size=20):
+    for time, mag, error in to_chunks(lightcurve_df, chunk_size=chunk_size):
         packed_observations = {'time': time,
                                'magnitude': mag,
                                'error': error}
         yield packed_observations
 
 
-def calculate_features_in_lightcurve(lc_file_band_1_path, lc_file_band_2_path):
+def calculate_features_in_lightcurve(lc_file_band_1_path,
+                                     lc_file_band_2_path,
+                                     chunk_size=20):
     lc_df_band_1 = lightcurve.read_from_file(lc_file_band_1_path, skiprows=3)
     lc_df_band_1 = lightcurve.remove_unreliable_observations(lc_df_band_1)
     lc_df_band_2 = lightcurve.read_from_file(lc_file_band_2_path, skiprows=3)
     lc_df_band_2 = lightcurve.remove_unreliable_observations(lc_df_band_2)
     lc_features = LightCurveFeatures()
-    observations_band_1 = _pack_observations_in_chunks(lc_df_band_1)
-    observations_band_2 = _pack_observations_in_chunks(lc_df_band_2)
+    observations_seen = 0
+    feature_values = []
+    observations_band_1 = _pack_observations_in_chunks(lc_df_band_1,
+                                                       chunk_size)
+    observations_band_2 = _pack_observations_in_chunks(lc_df_band_2,
+                                                       chunk_size)
     for obs_1, obs_2 in zip(observations_band_1, observations_band_2):
         logger.info("New observation for %s and %s",
                     lc_file_band_1_path, lc_file_band_2_path)
         lc_features.update(obs_1, obs_2)
+        observations_seen += _observations_in_chunk(obs_1)
+        feature_dict = lc_features.values()
+        feature_dict['observations_seen'] = observations_seen
+        feature_values.append(feature_dict)
+    return feature_values
 
 
-def calculate_features_of_file(lc_id, lc_files):
+def calculate_features_of_file(lc_id, lc_files, lc_dir, chunk_size):
+    dir_name = 'streaming_macho_{}_chunks/{}'.format(chunk_size, lc_dir)
     lc_has_two_bands = len(lc_files) == 2
     if lc_has_two_bands:
         stop_iter = True
         logger.info("Calculating features for %s", lc_id)
-        calculate_features_in_lightcurve(lc_files[0], lc_files[1])
+        features_per_chunk = calculate_features_in_lightcurve(lc_files[0],
+                                                              lc_files[1],
+                                                              chunk_size)
+        feature_df = pd.DataFrame(features_per_chunk)
+        feature_df.to_csv('{}/{}csv'.format(dir_name, lc_id))
     else:
         logger.error("%s has %d bands", lc_id, len(lc_files))
 
 
-def calculate_features_in_dir(lc_dir, n_processes=1):
+def calculate_features_in_dir(lc_dir, n_processes=1, chunk_size=20):
     lc_dir_path = '{}/{}'.format(PATH_MACHO, lc_dir)
     files_in_lc_dir = os.listdir(lc_dir_path)
     lc_files = filter(lambda f: f.startswith('lc_'), files_in_lc_dir)
+    should_cancel = False
     lc_id_to_file = {}
     for lc_file in lc_files:
+        if should_cancel:
+            break
         lc_id = lc_file[3:-5]
         lc_file_path = '{}/{}'.format(lc_dir_path, lc_file)
         if lc_id in lc_id_to_file:
             lc_id_to_file[lc_id].append(lc_file_path)
+            should_cancel = True
         else:
             lc_id_to_file[lc_id] = [lc_file_path]
 
+    args_for_computation = [(k, v, lc_dir, chunk_size)
+                            for k, v in lc_id_to_file.items()]
     pool = Pool(processes=n_processes)
-    pool.starmap(calculate_features_of_file, lc_id_to_file.items())
-    # stop_iter = False
-    # for lc_id, lc_files in lc_id_to_file.items():
-    #     if stop_iter:
-    #         break
-    #     lc_has_two_bands = len(lc_files) == 2
-    #     if lc_has_two_bands:
-    #         stop_iter = True
-    #         logger.info("Calculating features for %s", lc_id)
-    #         pool.map()
-    #         calculate_features_in_lightcurve(lc_files[0], lc_files[1])
-    #     else:
-    #         logger.error("%s has %d bands", lc_id, len(lc_files))
+    pool.starmap(calculate_features_of_file, args_for_computation)
 
 
 logger.info("Calculating features in %s", os.path.abspath(PATH_MACHO))
@@ -96,4 +115,8 @@ lc_dirs = [dir_ for dir_ in os.listdir(PATH_MACHO)
            if not dir_.startswith('.') and dir_ != 'non_variables']
 for lc_dir in lc_dirs:
     logger.info("Calculating features in %s", lc_dir)
-    calculate_features_in_dir(lc_dir, args.n_processes)
+    output_dir = os.path.dirname(
+        'streaming_macho_{}_chunks/{}'.format(args.chunk_size, lc_dir))
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    calculate_features_in_dir(lc_dir, args.n_processes, args.chunk_size)
