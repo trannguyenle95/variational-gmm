@@ -78,7 +78,6 @@ def calculate_features_of_file(lc_id, lc_files, lc_dir, output_dir,
                                chunk_size):
     lc_has_two_bands = len(lc_files) == 2
     if lc_has_two_bands:
-        stop_iter = True
         logger.info("Calculating features for %s", lc_id)
         features_per_chunk = calculate_features_in_lightcurve(lc_files[0],
                                                               lc_files[1],
@@ -96,16 +95,12 @@ def calculate_features_in_dir(lc_dir, path_macho, output_dir, n_processes=1,
     lc_dir_path = '{}/{}'.format(path_macho, lc_dir)
     files_in_lc_dir = os.listdir(lc_dir_path)
     lc_files = filter(lambda f: f.startswith('lc_'), files_in_lc_dir)
-    should_cancel = False
     lc_id_to_file = {}
     for lc_file in lc_files:
-        if should_cancel:
-            break
         lc_id = lc_file[3:-5]
         lc_file_path = '{}/{}'.format(lc_dir_path, lc_file)
         if lc_id in lc_id_to_file:
             lc_id_to_file[lc_id].append(lc_file_path)
-            should_cancel = True
         else:
             lc_id_to_file[lc_id] = [lc_file_path]
 
