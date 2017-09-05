@@ -79,13 +79,20 @@ def calculate_features_of_file(lc_id, lc_files, lc_dir, output_dir,
     lc_has_two_bands = len(lc_files) == 2
     if lc_has_two_bands:
         logger.info("Calculating features for %s", lc_id)
-        features_per_chunk = calculate_features_in_lightcurve(lc_files[0],
-                                                              lc_files[1],
-                                                              chunk_size)
-        feature_df = pd.DataFrame(features_per_chunk)
-        file_path = '{}/{}csv'.format(output_dir, lc_id)
-        logger.info("Saving to %s", file_path)
-        feature_df.to_csv(file_path)
+        features_per_chunk = None
+        try:
+            features_per_chunk = calculate_features_in_lightcurve(lc_files[0],
+                                                                  lc_files[1],
+                                                                  chunk_size)
+        except Exception as e:
+            logger.exception("Couldn't calculate features for lightcurve %s",
+                             lc_id)
+
+        if features_per_chunk:
+            feature_df = pd.DataFrame(features_per_chunk)
+            file_path = '{}/{}csv'.format(output_dir, lc_id)
+            logger.info("Saving to %s", file_path)
+            feature_df.to_csv(file_path)
     else:
         logger.error("%s has %d bands", lc_id, len(lc_files))
 
