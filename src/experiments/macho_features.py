@@ -49,6 +49,19 @@ def _pack_observations_in_chunks(lightcurve_df, chunk_size=20):
         yield packed_observations
 
 
+def _get_per_band(lc_list):
+    blue_band = None
+    red_band = None
+    if lc_list[0][-5] == 'B':
+        logger.info("Blue band is first option")
+        red_band = lc_list[1]
+        blue_band = lc_list[0]
+    else:
+        red_band = lc_list[0]
+        blue_band = lc_list[1]
+    return blue_band, red_band
+
+
 def calculate_features_in_lightcurve(lc_file_band_1_path,
                                      lc_file_band_2_path,
                                      chunk_size=20):
@@ -80,9 +93,10 @@ def calculate_features_of_file(lc_id, lc_files, lc_dir, output_dir,
     if lc_has_two_bands:
         logger.info("Calculating features for %s", lc_id)
         features_per_chunk = None
+        blue_band, red_band = _get_per_band(lc_files)
         try:
-            features_per_chunk = calculate_features_in_lightcurve(lc_files[0],
-                                                                  lc_files[1],
+            features_per_chunk = calculate_features_in_lightcurve(blue_band,
+                                                                  red_band,
                                                                   chunk_size)
         except Exception as e:
             logger.exception("Couldn't calculate features for lightcurve %s",
