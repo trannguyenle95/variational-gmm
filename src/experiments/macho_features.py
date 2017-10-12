@@ -62,6 +62,17 @@ def _get_per_band(lc_list):
     return blue_band, red_band
 
 
+def _align_lightcurves(lc_df_band_1, lc_df_band_2):
+    time_1, mag_1, error_1 = lightcurve.unpack_df_in_arrays(lc_df_band_1)
+    time_2, mag_2, error_2 = lightcurve.unpack_df_in_arrays(lc_df_band_2)
+    [mag_1, mag_2, time_1, error_1, error_2] = \
+        lightcurve.align_lightcurves(time_1, time_2,
+                                     mag_1, mag_2,
+                                     error_1, error_2)
+    return (lightcurve.pack_arrays_in_df(time_1, mag_1, error_1),
+            lightcurve.pack_arrays_in_df(time_1, mag_2, error_2))
+
+
 def calculate_features_in_lightcurve(lc_file_band_1_path,
                                      lc_file_band_2_path,
                                      chunk_size=20):
@@ -69,6 +80,7 @@ def calculate_features_in_lightcurve(lc_file_band_1_path,
     lc_df_band_1 = lightcurve.remove_unreliable_observations(lc_df_band_1)
     lc_df_band_2 = lightcurve.read_from_file(lc_file_band_2_path, skiprows=3)
     lc_df_band_2 = lightcurve.remove_unreliable_observations(lc_df_band_2)
+    lc_df_band_1, lc_df_band_2 = _align_lightcurves(lc_df_band_1, lc_df_band_2)
     lc_features = LightCurveFeatures()
     observations_seen = 0
     feature_values = []
