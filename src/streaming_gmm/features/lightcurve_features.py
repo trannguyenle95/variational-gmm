@@ -344,42 +344,76 @@ class RangeCS(StreamingFeature):
         self.mean_magnitude = MeanMagnitude()
         self._max = -1 * (1 << 30)  # very small number
         self._min = -self._max  # very big number
-        self.cumulative_sum_l = []
         self.acumulated_samples = 0
 
     def __str__(self):
         return "RangeCS"
 
     def value(self):
-        return self._max - self._min
+        return 1. / (self.acumulated_samples * self.std.value()) * (self._max - self._min)
 
     def update(self, observations, observations_other_band={}):
         time, magnitude, error = self._unpack_observations(observations)
         N = magnitude.shape[0]
 
+        self.acumulated_samples += N
         self.std.update(observations)
         self.mean_magnitude.update(observations)
 
-        for i in range(self.acumulated_samples, N):
+        for i in range(N):
             if len(self.cumulative_sum_l) > 0:
-                prev_sum = self.cumulative_sum_l[i - 1]
+                prev_sum = self.cumulative_sum_l[-1]
             else:
                 prev_sum = 0
-            self.cumulative_sum_l.append(
-                prev_sum
-                + magnitude[i - self.acumulated_samples]
-                - self.mean_magnitude.value())
+            self.cumulative_sum_l.append(prev_sum + magnitude[i])
 
-        self.acumulated_samples += magnitude.shape[0]
+        sorted_cum_sum = sorted(self.cumulative_sum_l)
+        sorted_index = np.argsort(self.cumulative_sum_l)
 
-        # TODO: calculate max without iterating through the whole list
-        for m in self.cumulative_sum_l:
-            s = 1. / (self.acumulated_samples * self.std.value()) * m
-            if s > self._max:
-                self._max = s
-            if s < self._min:
-                self._min = s
+        # for debugging
+        max_min = []
+        for i in range(len(self.cumulative_sum_l)):
+            max_min.append(self.cumulative_sum_l[i] - (i + 1) * self.mean_magnitude.value())
 
+        print("Max true: ", max(max_min))
+        print("Min true: ", min(max_min))
+        print("acum samples: ", self.acumulated_samples)
+        print("std ", self.std.value())
+
+        # self._max = max(max_min)
+        # self._min = min(max_min)
+        self._max = self.binary_search_max(sorted_cum_sum, sorted_index)
+        self._min = self.binary_search_min(sorted_cum_sum, sorted_index)
+        # print("Max false: ", self._max)
+        # print("Min false: ", self._min)
+
+    def binary_search_min(self, sorted_cum_sum, sorted_index):
+        first = 0
+        last = len(sorted_cum_sum)
+
+        while first < last:
+            mid = int((first + last) / 2)
+            first_val = sorted_cum_sum[first] - (sorted_index[first] + 1) * self.mean_magnitude.value()
+            mid_val = sorted_cum_sum[mid] - (sorted_index[mid] + 1) * self.mean_magnitude.value()
+            if first_val <= mid_val:
+                last = mid
+            else:
+                first = mid
+        return sorted_cum_sum[first] - (sorted_index[first] + 1) * self.mean_magnitude.value()
+
+    def binary_search_max(self, sorted_cum_sum, sorted_index):
+        first = 0
+        last = len(sorted_cum_sum)
+
+        while first < last:
+            mid = int((first + last) / 2)
+            first_val = sorted_cum_sum[first] - (sorted_index[first] + 1) * self.mean_magnitude.value()
+            mid_val = sorted_cum_sum[mid] - (sorted_index[mid] + 1) * self.mean_magnitude.value()
+            if first_val >= mid_val:
+                last = mid
+            else:
+                first = mid
+        return sorted_cum_sum[first] - (sorted_index[first] + 1) * self.mean_magnitude.value()
 
 class Skewness(StreamingFeature):
 
@@ -546,6 +580,7 @@ class LightCurveFeatures:
         'flux_percentile_ratio_mid_20': FluxPercentileRatioMid20,
         'flux_percentile_ratio_mid_35': FluxPercentileRatioMid35,
         'color': Color,
+        'range_cs': RangeCS,
     }
 
     def __init__(self, features=[]):
