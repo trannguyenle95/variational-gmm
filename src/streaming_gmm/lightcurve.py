@@ -29,7 +29,7 @@ def remove_unreliable_observations(lightcurve_df, error_threshold=3,
     time, mag, error = unpack_df_in_arrays(lightcurve_df)
     mean_error = error.mean()
     mean_mag = mag.mean()
-    has_low_error = error < (outlier_threshold * mean_error)
+    has_low_error = error < (error_threshold * mean_error)
     is_not_outlier = (np.abs(mag - mean_mag) / np.std(mag)) < outlier_threshold
     reliables_idxs = has_low_error & is_not_outlier
 
