@@ -16,6 +16,12 @@ class StreamingFeature:
                                   "method")
 
     @staticmethod
+    def _get_aligned_obs(observations):
+        return {'time': observations['aligned_time'],
+                'magnitude': observations['aligned_magnitude'],
+                'error': observations['aligned_error']}
+
+    @staticmethod
     def _unpack_observations(observations):
         time = observations['time']
         magnitude = observations['magnitude']
@@ -33,18 +39,6 @@ class StreamingFeature:
                                  time.shape[0], magnitude.shape[0],
                                  error.shape[0]))
             raise ValueError(error_message)
-
-
-class ApproximableFeature:
-
-    def function(self):
-        pass
-
-    def gradient(self):
-        pass
-
-    def hessian(self):
-        pass
 
 
 class MeanMagnitude(StreamingFeature):
@@ -205,7 +199,7 @@ class _WeightedMean(StreamingFeature):
         self.mean_mag_den += np.sum(1. / (error ** 2))
 
 
-class StetsonK(StreamingFeature, ApproximableFeature):
+class StetsonK(StreamingFeature):
 
     def __init__(self):
         self.weighted_mean = _WeightedMean()
@@ -251,17 +245,6 @@ class StetsonK(StreamingFeature, ApproximableFeature):
         self._next_sigmap_den_correction_1 = 2 * np.sum((-magnitude + mean_mag) / error ** 2)
         self._next_sigmap_den_correction_2 = 2 * np.sum(error ** 2)
 
-    def function(self):
-        n = sy.Symbol('n')
-        v = sy.Symbol('v')
-        v_hat = sy.Symbol('v_hat')
-        sigma = sy.Symbol('sigma')
-        return sy.sqrt(n / (n - 1)) * ((v - v_hat) / sigma)
-
-    def gradient(self, time, magnitude, error):
-        n = self.acumulated_samples
-        return -self._inv_sigma_sum
-
 
 class StetsonJ(StreamingFeature):
 
@@ -278,9 +261,12 @@ class StetsonJ(StreamingFeature):
         return 1. / self.acumulated_samples * self._acum_sum
 
     def update(self, observations, observations_other_band={}):
-        time1, magnitude1, error1 = self._unpack_observations(observations)
-        time2, magnitude2, error2 = self._unpack_observations(
+        aligned_obs = self._get_aligned_obs(observations)
+        aligned_obs_other_band = self._get_aligned_obs(
             observations_other_band)
+        time1, magnitude1, error1 = self._unpack_observations(aligned_obs)
+        time2, magnitude2, error2 = self._unpack_observations(
+            aligned_obs_other_band)
         self.acumulated_samples += magnitude1.shape[0]
         self.weighted_mean_1.update(observations)
         self.weighted_mean_2.update(observations_other_band)
@@ -311,7 +297,13 @@ class StetsonL(StreamingFeature):
         return j * k / .798
 
     def update(self, observations, observations_other_band={}):
-        self.stetson_k.update(observations, observations_other_band)
+        aligned_obs = self._get_aligned_obs(observations)
+        aligned_obs_other_band = self._get_aligned_obs(
+            observations_other_band)
+        self.stetson_k.update(aligned_obs, aligned_obs_other_band)
+
+        # We don't pass the aligned observations, because stetson_j receives
+        # the whole observations dict
         self.stetson_j.update(observations, observations_other_band)
 
 
