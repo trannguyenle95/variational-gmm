@@ -6,6 +6,7 @@ import logging
 import sys
 import argparse
 import pandas as pd
+import time as tm
 from multiprocessing import Pool
 
 sys.path.append('{}/../'.format(os.path.dirname(os.path.abspath(__file__))))
@@ -45,7 +46,10 @@ def _pack_observations_in_chunks(lightcurve_df, chunk_size=20):
     for time, mag, error in to_chunks(lightcurve_df, chunk_size=chunk_size):
         packed_observations = {'time': time,
                                'magnitude': mag,
-                               'error': error}
+                               'error': error,
+                               'aligned_time': time,
+                               'aligned_magnitude': mag,
+                               'aligned_error': error}
         yield packed_observations
 
 
@@ -88,13 +92,16 @@ def calculate_features_in_lightcurve(lc_file_band_1_path,
                                                        chunk_size)
     observations_band_2 = _pack_observations_in_chunks(lc_df_band_2,
                                                        chunk_size)
-    for obs_1, obs_2 in zip(observations_band_1, observations_band_2):
+
+    for i, (obs_1, obs_2) in enumerate(zip(observations_band_1,
+                                           observations_band_2)):
         logger.info("New observation for %s and %s",
                     lc_file_band_1_path, lc_file_band_2_path)
         lc_features.update(obs_1, obs_2)
         observations_seen += _observations_in_chunk(obs_1)
         feature_dict = lc_features.values()
         feature_dict['observations_seen'] = observations_seen
+        feature_dict['chunk_numb'] = i
         feature_values.append(feature_dict)
     return feature_values
 
@@ -148,6 +155,8 @@ path_macho = args.machopath
 logger.info("Calculating features in %s", path_macho)
 lc_dirs = [dir_ for dir_ in os.listdir(path_macho)
            if not dir_.startswith('.') and dir_ != 'non_variables']
+
+start_time = tm.time()
 for lc_dir in lc_dirs:
     logger.info("Calculating features in %s", lc_dir)
     output_dir_path = '{}/streaming_{}_chunks/{}/'.format(args.outputdir,
@@ -158,3 +167,6 @@ for lc_dir in lc_dirs:
         os.makedirs(output_dir)
     calculate_features_in_dir(lc_dir, path_macho, output_dir_path,
                               args.n_processes, args.chunk_size)
+elapsed_time = tm.time() - start_time
+
+logger.info("Elapsed time: %d secs", elapsed_time)
