@@ -10,4 +10,6 @@ Extract macho features in a streaming way:
 python src/experiments/macho_features.py /home/lukas/universidad/magister/streaming-bayesian/data/macho-raw /home/lukas/universidad/magister/streaming-bayesian/results --n-processes 2
 ```
 
+## Important!
+
 This repository is missing the classification experiments. I hope to upload that code soon (I had that code in another computer that I don't have access right now).
